@@ -1,0 +1,264 @@
+---
+title: "Week2 in-class Lab"
+output: html_document
+---
+
+####  Step 1: Set the working directory for reading in files.
+```{R  eval=FALSE}
+setwd('/insert full path to your folder')
+```
+Remember, if you can’t get the setwd (set working directory) function to work, try ?setwd to get some additional help.
+
+#### Step 2: Read csv file from on-line source. 
+You can read the data set from on-line as the cvs file in R
+```{R  message = FALSE, warning=FALSE}
+Ads <- read.csv("http://polytopes.net/Advertising.csv")
+summary(Ads)
+```
+
+#### Step 3.1: Estimating the coefficients for simple linear regression
+Now we will try to estimate the coefficients of the linear regression line. In order to estimate the coefficients we will use "lm" function.  This function is already in the default R setting. 
+
+In Ads dataset, we have five variables: X, TV, radio, newspaper, and sales.  X is a label of each data point.  TV is a budget for TV ads.  radio is a budget for ads in ratio.  newspaper is a budget for ads in newspapers.  They are all in thousands of dollars.
+We, here, want to ask the following question: Is there a relationship between advertising budget and sales?  To answer this question we will try to fit the data with a simple linear regression model.  First we will try to see any linear relation between sales and TV ad.  Here sales as y variable, response and TV as x variable, explanatory.
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~TV, data=Ads)
+summary(lm.fit)
+```
+
+If you want to print just estimates of coefficients...
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~TV, data=Ads)
+coef(lm.fit)
+```
+
+
+If you want to print the confidence intervals for each estimate, type:
+```{R  message = FALSE, warning=FALSE}
+confint(lm.fit)
+```
+
+#### Step 3.2: Diagnostic plots
+
+Let us look at the diagnostic plots from "lm()" function:
+```{R  message = FALSE, warning=FALSE}
+par(mfrow = c(2, 2))
+plot(lm.fit)
+```
+
+The diagnostic plots show residuals in four different ways:
+
+  #. Residuals vs Fitted. Used to check the linear relationship assumptions. A horizontal line, without distinct patterns is an indication for a linear relationship, what is good.
+
+  #. Normal Q-Q. Used to examine whether the residuals are normally distributed. It’s good if residuals points follow the straight dashed line.
+
+  #. Scale-Location (or Spread-Location). Used to check the homogeneity of variance of the residuals (homoscedasticity). Horizontal line with equally spread points is a good indication of homoscedasticity. This is not the case in our example, where we have a heteroscedasticity problem.
+
+  #. Residuals vs Leverage. Used to identify influential cases, that is extreme values that might influence the regression results when included or excluded from the analysis. This plot will be described further in the next sections.
+
+##### Step 3.2a: Residuals vs Fitted -- Linearity of the data
+
+The linearity assumption can be checked by inspecting the Residuals vs Fitted plot (1st plot).
+
+```{R  message = FALSE, warning=FALSE}
+plot(lm.fit, 1)
+```
+
+Ideally, the residual plot will show no fitted pattern. That is, the red line should be approximately horizontal at zero. The presence of a pattern may indicate a problem with some aspect of the linear model.
+
+In our example, there is no pattern in the residual plot. This suggests that we can assume linear relationship between the predictors and the outcome variables. 
+
+Note that, if the residual plot indicates a non-linear relationship in the data, then a simple approach is to use non-linear transformations of the predictors, such as log(x), sqrt(x) and x^2, in the regression model. 
+
+##### Step 3.2b: scale-location plot -- Homogeneity of variance
+
+This assumption can be checked by examining the scale-location plot, also known as the spread-location plot.
+
+```{R  message = FALSE, warning=FALSE}
+plot(lm.fit, 3)
+```
+
+This plot shows if residuals are spread equally along the ranges of predictors. It’s good if you see a horizontal line with equally spread points. In our example, this is not the case.
+
+It can be seen that the variability (variances) of the residual points increases with the value of the fitted outcome variable, suggesting non-constant variances in the residuals errors (or heteroscedasticity).
+
+A possible solution to reduce the heteroscedasticity problem is to use a log or square root transformation of the outcome variable (y).
+
+```{R  message = FALSE, warning=FALSE}
+m.fit2 <- lm(log(sales)~TV, data=Ads) 
+plot(m.fit2, 3)
+```
+
+##### Step 3.2c: Normal QQ plot -- Normality of residuals
+
+The QQ plot of residuals can be used to visually check the normality assumption. The normal probability plot of residuals should approximately follow a straight line.
+
+In our example, all the points fall approximately along this reference line, so we can assume normality.
+```{R  message = FALSE, warning=FALSE}
+plot(lm.fit, 2)
+```
+
+##### Step 3.2d: Residuals vs Leverage -- Outliers and high levarage points
+
+###### Outliers:
+An outlier is a point that has an extreme outcome variable value. The presence of outliers may affect the interpretation of the model, because it increases the RSE.
+
+Outliers can be identified by examining the standardized residual (or studentized residual), which is the residual divided by its estimated standard error. Standardized residuals can be interpreted as the number of standard errors away from the regression line.
+
+Observations whose standardized residuals are greater than 3 in absolute value are possible outliers (James et al. 2014).
+
+###### High leverage points:
+
+A data point has high leverage, if it has extreme predictor x values. This can be detected by examining the leverage statistic or the hat-value. A value of this statistic above 2(p + 1)/n indicates an observation with high leverage (P. Bruce and Bruce 2017); where, p is the number of predictors and n is the number of observations.
+
+Outliers and high leverage points can be identified by inspecting the Residuals vs Leverage plot:
+
+```{R  message = FALSE, warning=FALSE}
+plot(lm.fit, 5)
+```
+
+The plot above highlights the top 3 most extreme points (#26, #36 and #179), with a standardized residuals below -2. However, there is no outliers that exceed 3 standard deviations, what is good.
+
+Additionally, there is no high leverage point in the data. That is, all data points, have a leverage statistic below 2(p + 1)/n = 4/200 = 0.02.
+
+
+###### Influential values:
+
+An influential value is a value, which inclusion or exclusion can alter the results of the regression analysis. Such a value is associated with a large residual.
+
+Not all outliers (or extreme data points) are influential in linear regression analysis.
+
+Statisticians have developed a metric called Cook’s distance to determine the influence of a value. This metric defines influence as a combination of leverage and residual size.
+
+A rule of thumb is that an observation has high influence if Cook’s distance exceeds 4/(n - p - 1)(P. Bruce and Bruce 2017), where n is the number of observations and p the number of predictor variables.
+
+The Residuals vs Leverage plot can help us to find influential observations if any. On this plot, outlying values are generally located at the upper right corner or at the lower right corner. Those spots are the places where data points can be influential against a regression line.
+
+The following plots illustrate the Cook’s distance and the leverage of our model:
+
+```{R  message = FALSE, warning=FALSE}
+par(mfrow = c(1,2))
+# Cook's distance
+plot(lm.fit, 4)
+# Residuals vs Leverage
+plot(lm.fit, 5)
+```
+
+By default, the top 3 most extreme values are labelled on the Cook’s distance plot. If you want to label the top 5 extreme values, specify the option id.n as follow:
+```{R  message = FALSE, warning=FALSE}
+plot(lm.fit, 4, id.n = 5)
+```
+
+When data points have high Cook’s distance scores and are to the upper or lower right of the leverage plot, they have leverage meaning they are influential to the regression results. The regression results will be altered if we exclude those cases. 
+
+In our example, the data don’t present any influential points. Cook’s distance lines (a red dashed line) are not shown on the Residuals vs Leverage plot because all points are well inside of the Cook’s distance lines. 
+
+##### Step 3.2e: Discussion
+
+This chapter describes linear regression assumptions and shows how to diagnostic potential problems in the model.
+
+The diagnostic is essentially performed by visualizing the residuals. Having patterns in residuals is not a stop signal. Your current regression model might not be the best way to understand your data.
+
+Potential problems might be:
+
+  * A non-linear relationships between the outcome and the predictor variables. When facing to this problem, one solution is to include a quadratic term, such as polynomial terms or log transformation. 
+
+  * Existence of important variables that you left out from your model. Other variables you didn’t include (e.g., age or gender) may play an important role in your model and data. 
+
+  * Presence of outliers. If you believe that an outlier has occurred due to an error in data collection and entry, then one solution is to simply remove the concerned observation.
+
+
+#### Step 3.3: Now let's plot the regression line with the data points.
+The sales are stored in the fifth column of the dataset "Ads" which is a two dimensional array.  
+
+```{R  message = FALSE, warning=FALSE}
+head(Ads[,5])
+```
+Here Ads[,5] means the fifth column of the matrix "Ads".  If you want to access the fifth rows type Ads[5,] instead.  Make sure the index starts from 1.  NOT 0.  In Python it starts 0.  These numbers are set as a response variable.  
+
+TV is stored in the second column of the matrix "Ads".  
+```{R  message = FALSE, warning=FALSE}
+head(Ads[,2])
+```
+These values are set as an explanatory variable.
+
+In order to plot Ads[,2] on the x-axis and Ads[,5] on the y-axis using plot() function, type:
+```{R  message = FALSE, warning=FALSE}
+plot(Ads[,2],Ads[,5])
+```
+
+Then we want to add a regression line in the plot.  You will use abline() function 
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~TV, data=Ads)
+plot(Ads[,2],Ads[,5])
+abline(lm.fit)
+```
+
+If you want to draw the residual lines as you have seen in the lecture you can type:
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~TV, data=Ads)
+plot(Ads[,2],Ads[,5])
+abline(lm.fit)
+pre <- predict(lm.fit) 
+segments(Ads[,2], Ads[,5], Ads[,2], pre, col="red")
+```
+
+
+
+#### Step 4: Estimating the coefficients for multiple linear regression
+
+Now we will fit the data to multiple regression model.  We will set TV, radio, and newspaper as explanatory variables, $X_1$, $X_2$, $X_3$, and sales as a response variable, Y.  
+To use lm() function for multiple linear regression, you have to set the model. To define we will do type "sales ~ TV+radio+newspaper".  
+
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~TV+radio+newspaper, data=Ads)
+summary(lm.fit)
+```
+
+For a short cut you can do
+```{R  message = FALSE, warning=FALSE}
+lm.fit<-lm(sales~., data=Ads)
+summary(lm.fit)
+plot(lm.fit)
+```
+
+What do you think the difference between "lm.fit<-lm(sales~TV+radio+newspaper, data=Ads)" and "lm.fit<-lm(sales~., data=Ads)"?  In lm() function, if we type as "sales~." then we are assigning ALL variables except sales as explanatory variables.
+
+#### Step 5: Stepwise Model Selection (Feature Subsetting)
+
+Please see the section starting at page 205 in An Introduction to Statistical Learning (James et al, 2013) for an in-depth discussion of model selection. For this practical exercise, we’ll apply the automated stepwise model selection approach to the model that has all of our predictors using the code below:
+```{R  message = FALSE, warning=FALSE}
+# Conduct stepwise model selection
+lm.step<-step(lm.fit, direction = "both")
+# Summarize the selected model
+summary(lm.step)
+```
+
+What is your answers to the following questions?
+
+1. Conduct a diagnostic analysis using Diagnostic plots.  What do you think from all plots? Especially,
+  
+    #. Linearity of the data
+    
+    #. Homogeneity of variance
+    
+    #. Normality of residuals
+    
+    #. Outliers and high levarage points
+
+2. Is at least one of the predictors X1, X2,  . . . , Xp useful in predicting the response?
+
+3. Do all the predictors help to explain Y, or is only a subset of the predictors useful?
+
+4. How well does the model fit the data?
+
+5. What does the coefficient for the newspaper variable suggest?
+
+#### Before moving on, perform the following three actions to save your work and prepare for the practical application:
+
+  #. Save your workspace as “LectureExampleData1.RData” (By typing save.image(“LectureExampleData1.RData”) function)
+
+  #. Save your script file “LectureExampleData1" in the jupyter notebook (click on "Save and Checkpoint" next to "+" sign)
+
+
+

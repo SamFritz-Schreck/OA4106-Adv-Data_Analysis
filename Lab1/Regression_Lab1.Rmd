@@ -1,0 +1,855 @@
+---
+title: "Regression Lab 1"
+author: "Sam Fritz-Schreck"
+date: "2023-07-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# id: model id
+# object: regsubsets object
+# data: data used to fit regsubsets
+# outcome: outcome variable
+get_model_formula <- function(id, object, outcome){
+  # get models data
+  models <- summary(object)$which[id,-1]
+  # Get outcome variable
+  #form <- as.formula(object$call[[2]])
+  #outcome <- all.vars(form)[1]
+  # Get model predictors
+  predictors <- names(which(models == TRUE))
+  predictors <- paste(predictors, collapse = "+")
+  # Build model formula
+  as.formula(paste0(outcome, "~", predictors))
+}
+```
+
+## Week 2 Part 1: Regression analysis on the "Credit" dataset
+
+In the take-home lab exercise you will go through what we did in the lab with "Credit" dataset from "ISLR" package. Here we apply the best subset selection approach to the "Credit" dataset. This means that we would like to predict a person's "Balance" on the basis of various statistics associated with performance in the previous year.
+
+"Credit" dataset is in "ISLR" library. So simply call "ISLR" library and call "Credit".
+
+```{r}
+library(ISLR)
+data(Credit)
+summary(Credit)
+
+set.seed(1)
+train <- sample(1:nrow(Credit), round(nrow(Credit))/2)
+
+test <- (-train)
+
+credit.train = Credit[train,]
+credit.test = Credit[test,]
+```
+
+## Question 1
+
+Use the multiple linear regression, pick the features you think the best via stepwise feature selection, BIC, Cp and adjusted R2.
+
+### Features Selected
+
+Stepwise: Balance \~ Income + Limit + Cards + Age + Student
+
+Adj R2 : Balance \~ Income + Limit + Cards + Age + Student
+
+CP: Balance \~ Income + Limit + Cards + Age + Student
+
+BIC: Balance \~ Income + Limit + Cards + Age + Student
+
+```{r}
+# Stepwise Feature Selection
+lm.fit<-lm(Balance ~., credit.train)
+summary(lm.fit)
+# Conduct stepwise model selection
+regfit.step<-step(lm.fit, direction = "both")
+# Summarize the selected model
+summary(regfit.step)
+```
+
+```{r}
+# Best Subset
+library(leaps)
+regfit.full <- regsubsets(Balance ~., credit.train, nvmax = 12)
+summary(regfit.full)
+
+res.sum <- summary(regfit.full)
+R2 = which.max(res.sum$adjr2)
+CP = which.min(res.sum$cp)
+BIC = which.min(res.sum$bic)
+
+# Adjusted R2
+R2.formula = get_model_formula(R2, regfit.full, "Balance")
+
+# CP
+CP.formula = get_model_formula(CP, regfit.full, "Balance")
+
+# BIC
+BIC.formula = get_model_formula(BIC, regfit.full, "Balance")
+```
+
+Compare Lasso and Ridge regression on "Credit" dataset.
+
+```{r}
+# Ridge Regression
+x <- model.matrix(Balance~.,Credit)
+y <- Credit$Balance
+
+set.seed(1)
+train <- sample(1:nrow(x), round(nrow(x))/2)
+
+test <- (-train)
+### We are setting training sets for the explanatory variables x and response variable y
+x.train <- x[train,]
+y.train <- y[train]
+### We are setting test sets for the explanatory variables x and response variable y
+x.test <- x[test,]
+y.test <- y[test]
+
+library(glmnet)
+grid <- 10^seq(10,-2,length=100)
+
+ridge.mod <- glmnet(x.train, y.train, alpha = 0, lambda = grid, thresh = 1e-12)
+
+set.seed (1)
+cv.out <- cv.glmnet(x.train, y.train, alpha = 0)
+plot(cv.out)
+
+bestlam.ridge <- cv.out$lambda.min
+bestlam.ridge
+
+ridge.pred <- predict(ridge.mod, s=bestlam.ridge, newx=x.test)
+## This is MSE with the test set
+ridge.MSE = mean((ridge.pred - y.test)^2)
+out <- glmnet(x,y,alpha=0)
+predict(out, type="coefficients", s=bestlam.ridge)
+```
+
+```{r}
+# Lasso Regression
+library(glmnet)
+grid <- 10^seq(10,-2,length=100)
+
+ridge.mod <- glmnet(x.train, y.train, alpha = 1, lambda = grid, thresh = 1e-12)
+
+set.seed (1)
+cv.out <- cv.glmnet(x.train, y.train, alpha = 1)
+plot(cv.out)
+
+bestlam.lasso <- cv.out$lambda.min
+bestlam.lasso
+
+lasso.pred <- predict(ridge.mod, s=bestlam.lasso, newx=x.test)
+## This is MSE with the test set
+lasso.MSE = mean((lasso.pred - y.test)^2)
+out <- glmnet(x,y,alpha=1)
+predict(out, type="coefficients", s=bestlam.lasso)
+```
+
+```{r}
+lm.R2 = lm(Balance ~ Income + Limit + Cards + Age + Student, data=credit.train)
+R2.pred = predict(lm.R2, newdata=credit.test)
+R2.MSE = mean((credit.test$Balance-R2.pred)^2)
+
+lm.CP = lm(Balance ~ Income + Limit + Cards + Age + Student, data=credit.train)
+CP.pred = predict(lm.CP, newdata=credit.test)
+CP.MSE = mean((credit.test$Balance-CP.pred)^2)
+
+lm.BIC = lm(Balance ~ Income + Limit + Cards + Age + Student, data=credit.train)
+BIC.pred = predict(lm.BIC, newdata=credit.test)
+BIC.MSE = mean((credit.test$Balance-BIC.pred)^2)
+```
+
+### Questions for Credit Data
+
+What can you conclude from the analysis?
+
+In both cases, income, cards, student, marriage, and ethnicity have large coefficients. Rating could also be significant even though it has a relatively low coefficient due its large value relative to the other metrics
+
+Which one is the best?
+
+Lasso performs better than ridge on the test set in this application
+
+What are λ for Lasso and Ridge regression?
+
+Ridge Regression: `r round(bestlam.ridge, 3)`
+
+Lasso Regression: `r round(bestlam.lasso, 3)`
+
+Compare the MSE for Ridge regression with selected variables via Best Subset Selection and Lasso. What do you think? How are they different?
+
+Adj R2 MSE: 10738.54
+
+CP MSE: 10738.54
+
+BIC MSE: 10738.54
+
+Ridge MSE: 16116.160
+
+Lasso MSE: 10605.163
+
+An argument could be made supporting Lasso or any of the best subset metric choices. For outright performance, I would choose Lasso as it has the best MSE on the testing data but for greater interpretability I would choose the best subset solution.
+
+Do you think lasso is better or Ridge regression?
+
+In this case, lasso performs better than ridge regression. The best lambda for ridge regression is really big, approximately 41, so it is overfitting to the training data and underperforming on the testing data.
+
+Which explanatory variables are contributing to "Balance"? Which variables are selected via best subset selection?
+
+In this case, both stepwise and all the best subset methods select the same variables to predict Balance.
+
+Stepwise: Balance \~ Income + Limit + Cards + Age + Student
+
+Adj R2 : Balance \~ Income + Limit + Cards + Age + Student
+
+CP: Balance \~ Income + Limit + Cards + Age + Student
+
+BIC: Balance \~ Income + Limit + Cards + Age + Student
+
+## Week 2 Part 2: Regression analysis on the "Auto" dataset
+
+In the second part of the take-home lab exercise you will go through what we did in the lab with "Auto" dataset from "ISLR" package. Here we apply the best subset selection approach to the "Auto" dataset. This means that we would like to predict a car's "mpg" on the basis of various statistics associated with each car's functionality and origin.
+
+There is a tricky part for this exercise. Namely we need to think how to deal with origin since it is a categorical variable (not a numerical). Also name variable has a lot of levels in this categorical variable.
+
+"Auto" dataset is in "ISLR" library. So simply call "ISLR" library and call "Auto".
+
+```{r}
+library(ISLR)
+data(Auto)
+summary(Auto)
+```
+
+## 
+
+Question 3
+
+Answer the questions above for "Auto" dataset.
+
+Use the multiple linear regression, pick the features you think the best via stepwise feature selection, BIC, Cp and adjusted R2.
+
+```{r}
+#convert origin to factors
+Auto$origin = as.factor(Auto$origin)
+
+set.seed(1)
+train <- sample(1:nrow(Auto), round(nrow(Auto))/2)
+
+test <- (-train)
+
+auto.train = Auto[train,]
+auto.test = Auto[test,]
+```
+
+Stepwise: mpg \~ weight + year + origin
+
+```{r}
+# Stepwise Feature Selection
+lm.fit<-lm(mpg ~.-name, auto.train)
+summary(lm.fit)
+# Conduct stepwise model selection
+regfit.step<-step(lm.fit, direction = "both")
+# Summarize the selected model
+summary(regfit.step)
+```
+
+Best Subsets:
+
+BIC: mpg \~ weight + year + origin2 + origin3
+
+CP: mpg \~ weight + year + origin2 + origin3
+
+Adj R2: mpg \~ horsepower + weight + year + origin2 + origin3
+
+```{r}
+# Best Subset
+library(leaps)
+regfit.full <- regsubsets(mpg ~. -name, auto.train, nvmax = 7)
+summary(regfit.full)
+
+res.sum <- summary(regfit.full)
+R2 = which.max(res.sum$adjr2)
+CP = which.min(res.sum$cp)
+BIC = which.min(res.sum$bic)
+
+# Adjusted R2
+R2.formula = get_model_formula(R2, regfit.full, "mpg")
+
+# CP
+CP.formula = get_model_formula(CP, regfit.full, "mpg")
+
+# BIC
+BIC.formula = get_model_formula(BIC, regfit.full, "mpg")
+```
+
+Compare Lasso and Ridge regression on "Auto" dataset.
+
+Ridge:
+
+```{r}
+
+
+# Ridge Regression
+x <- model.matrix(mpg~.-name,Auto)
+y <- Auto$mpg
+### We are setting training sets for the explanatory variables x and response variable y
+set.seed(1)
+train <- sample(1:nrow(x), round(nrow(x))/2)
+
+test <- (-train)
+
+x.train <- x[train,]
+y.train <- y[train]
+### We are setting test sets for the explanatory variables x and response variable y
+x.test <- x[test,]
+y.test <- y[test]
+
+library(glmnet)
+grid <- 10^seq(10,-2,length=100)
+
+ridge.mod <- glmnet(x.train, y.train, alpha = 0, lambda = grid, thresh = 1e-12)
+
+set.seed (1)
+cv.out <- cv.glmnet(x.train, y.train, alpha = 0)
+plot(cv.out)
+
+bestlam.ridge <- cv.out$lambda.min
+bestlam.ridge
+
+ridge.pred <- predict(ridge.mod, s=bestlam.ridge, newx=x.test)
+## This is MSE with the test set
+ridge.MSE = mean((ridge.pred - y.test)^2)
+out <- glmnet(x,y,alpha=0)
+predict(out, type="coefficients", s=bestlam.ridge)
+```
+
+Lasso:
+
+```{r}
+# Lasso Regression
+library(glmnet)
+grid <- 10^seq(10,-2,length=100)
+
+ridge.mod <- glmnet(x.train, y.train, alpha = 1, lambda = grid, thresh = 1e-12)
+
+set.seed (1)
+cv.out <- cv.glmnet(x.train, y.train, alpha = 1)
+plot(cv.out)
+
+bestlam.lasso <- cv.out$lambda.min
+bestlam.lasso
+
+lasso.pred <- predict(ridge.mod, s=bestlam.lasso, newx=x.test)
+## This is MSE with the test set
+lasso.MSE = mean((lasso.pred - y.test)^2)
+out <- glmnet(x,y,alpha=1)
+predict(out, type="coefficients", s=bestlam.lasso)
+```
+
+```{r, echo=FALSE}
+lm.R2 = lm(mpg ~ horsepower + weight + year + origin, data=auto.train)
+R2.pred = predict(lm.R2, newdata=auto.test)
+R2.MSE = mean((auto.test$mpg-R2.pred)^2)
+
+lm.CP = lm(mpg ~ weight + year + origin, data=auto.train)
+CP.pred = predict(lm.CP, newdata=auto.test)
+CP.MSE = mean((auto.test$mpg-CP.pred)^2)
+
+lm.BIC = lm(mpg ~ weight + year + origin, data=auto.train)
+BIC.pred = predict(lm.BIC, newdata=auto.test)
+BIC.MSE = mean((auto.test$mpg-BIC.pred)^2)
+```
+
+### Questions for Auto Data
+
+What can you conclude from the analysis?
+
+In this case, since the lasso \lambda is close to zero, it is basically just doing full feature MLR. Additionally, CP and BIC produced the same formula so we have three models to choose from: Ridge, BIC/CP and R2.
+
+Which one is the best?
+
+Based on all out performance on the test set, the CP/R2 model of mpg \~ cylinders + displacement + horsepower + weight + year + origin is the best choice. However BIC is not far behind and uses three less features and would be more interpretable so an argument can be made either way.
+
+What are λ for Lasso and Ridge regression?
+
+Ridge Regression: `r round(bestlam.ridge, 3)`
+
+Lasso Regression: `r round(bestlam.lasso, 3)`
+
+Compare the MSE for Ridge regression with selected variables via Best Subset Selection and Lasso. What do you think? How are they different?
+
+Adj R2 MSE: 10.41
+
+CP MSE: 10.37
+
+BIC MSE: 10.37
+
+Ridge MSE: 10.97
+
+Lasso MSE: 10.33
+
+Do you think lasso is better or Ridge regression?
+
+Although the Lasso MSE is better than Ridge, I think between the two ridge is still the better choice in this application. With a lambda so close to zero for lasso, we aren't really leveraging the L1-norm penalty that makes it distinct from standard MLR. Therefore, it is better to leverage standard MLR techniques such as best subsets over lasso in this instance.
+
+Which explanatory variables are contributing to "mpg"? Which variables are selected via best subset selection?
+
+Stepwise: mpg \~ weight + year + origin
+
+BIC: mpg \~ weight + year + origin
+
+CP: mpg \~ weight + year + origin
+
+Adj R2: mpg \~ horsepower + weight + year + origin
+
+## Week 3: Take-Home Lab Exercise
+
+Is Chicago Still Chiraq?
+
+In this take-home lab exercise, you'll update the previous analysis conducted on Chicago's homicide rate to determine if things are improving or getting worse, as well as provide the best possible estimate for the leadership as to what is likely to happen next.
+
+### Part 1: Data Acquisition and Cleaning
+
+```{r}
+#install.packages('data.table', 'ggplot2', 'plyr', 'xtable', dependencies=TRUE)
+#library(devtools)
+#install_github('ramnathv/rCharts', force= TRUE)
+library(ggplot2)
+library(plyr)
+library(rmarkdown)
+library(knitr)
+library(base64enc)
+library(xtable)
+
+
+# Note: install these packages using the RStudio package manager
+# forecast
+# data.table
+# devtools
+
+library(forecast)
+
+library(data.table)
+library(Rcpp)
+library(rCharts)
+```
+
+1.1 Go to Chicago's data portal and download Chicago's Homicide data for the period 1 January 2010 until 24 May 2023. The data portal is available at this web address:
+
+<https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2>
+
+1.2 Once there, open the "Crimes - 2001 to present - Dashboard."
+
+1.3 Use the "Date"" box (click and drag) and the "Primary Type" box (click on appropriate column) to subset the data to all homicides from 2010 until 2023. Then delete extra dates manually after you download the csv file from the website. Note that I get 7879 reported homicides in Chicago during this period as of June 3rd 2023.
+
+1.4 Use the Export button at the top to export your filtered query.
+
+1.5 Import the data as a .csv into your analysis environment (RStudio).
+
+```{r}
+#Crimes = read.csv('/home/sam/Documents/OA4106-Adv-Data_Analysis/Lab1/Crimes.csv')
+#save(Crimes, file='Crimes.Rda')
+load('Crimes.Rda')
+Raw.Data = Crimes
+```
+
+```{r}
+Series.Dates<-as.Date(Raw.Data$Date, '%m/%d/%Y')
+Series.Dates<-data.table(Series.Dates)
+Series.By.Day<-Series.Dates[,.N,by=.(mday(Series.Dates),month(Series.Dates),year(Series.Dates))][-c(1543,1575),]
+Series.By.Month<-Series.Dates[,.N,by=.(month(Series.Dates),year(Series.Dates))]
+Series.By.Month<-Series.By.Month[order(Series.By.Month$year,Series.By.Month$month),]
+Series.By.Month<-Series.By.Month[-162,]
+Series.By.Year<-Series.Dates[,.N,by=.(year(Series.Dates))]
+Series.By.Day 
+
+######## Reorganize and Reformat Dates 
+Series.Daily.Record<-data.frame(paste(rev(Series.By.Day$month), '/',
+                             rev(Series.By.Day$mday), '/',
+                             rev(Series.By.Day$year)),
+                             as.numeric(rev(Series.By.Day$N)))
+colnames(Series.Daily.Record)<-c('Date', 'Homicides')
+Series.Daily.Record$Date<-as.Date(as.character(Series.Daily.Record$Date),  #Convert Text to Date
+                                  format="%m / %d /%Y")
+head(Series.Daily.Record)                 #Note the missing dates
+
+Date.Range<-seq(min(Series.Daily.Record$Date), max(Series.Daily.Record$Date), 1)
+Date.Homicides<-vector(mode="numeric", length=length(Date.Range))
+for (i in 1:length(Date.Range)){
+  if(Date.Range[i] %in% Series.Daily.Record$Date){
+      Date.Homicides[i] <- Series.Daily.Record$Homicides[Series.Daily.Record$Date == Date.Range[i]]}
+  else{Date.Homicides[i] <- 0}
+}
+head(data.frame(Date.Range, Date.Homicides)) #Confirm Problem Fixed
+```
+
+### Part 2: Trend Analysis
+
+Use the techniques/code you learned for seasonal decomposition and trend analysis in this week's in-class lab to analyze the data you have downloaded. Note - it is imperative to prevent errors in your analysis that you completely clear the memory and variables stored in your analytical environment prior to beginning this new analysis. Use the following code to reset R's memory:
+
+Question 1: Provide the following in your written lab report:
+
+Produce a graphic/visualization suitable for briefing a decision-maker that illustrates the observed data and your fitted trend (and anything else you think would be helpful).
+
+```{r}
+freq<-Date.Homicides
+dates<-as.character(Date.Range)
+plot.data<-data.frame(dates, freq)
+n1 <- rCharts::Highcharts$new()
+n1$yAxis(min=list(0),title=list(text='Chicago Homicides'))
+n1$xAxis(categories = plot.data$dates, labels=list(rotation=-45, 
+         align='right'), tickInterval=365, title=list(text='Date'))
+n1$series(name='Homicide Count',type='column',data = as.list(plot.data$freq), 
+          color = 'red')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1daily.html", standalone = TRUE)
+```
+
+```{r}
+Time<-paste(Series.By.Month$month, Series.By.Month$year)
+freq<-Series.By.Month$N
+plot.data<-data.frame(Time, freq)
+n1 <- rCharts::Highcharts$new()
+n1$title(text="Monthly Chicago Homicides 2010 - 2023")
+n1$yAxis(min=list(0),title=list(text='Chicago Homicides'))
+n1$xAxis(categories = plot.data$Time, labels=list(rotation=-45, align='right'), tickInterval=24, title=list(text='Date'))
+n1$series(name='Homicide Count',type='column',data = as.list(plot.data$freq), color = 'red')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1monthly.html", standalone = TRUE)
+```
+
+```{r}
+#### Get Time Series Components for Seasonal Additive Model
+Series.By.Month.TS<-ts(Series.By.Month$N, start=c(2010,1), freq=12)
+seasonal.model<-stl(Series.By.Month.TS, s.window="periodic")
+plot(seasonal.model)
+```
+
+```{r}
+seasonal.model.trend<-as.vector(seasonal.model$time.series[,2])
+seasonal.model.seasons<-seasonal.model$time.series[,1][1:12]
+seasonal.fit<-as.vector(seasonal.model.trend+as.vector(seasonal.model$time.series[,1]))
+head(seasonal.model$time.series)
+
+Time<-paste(Series.By.Month$month, Series.By.Month$year)
+freq<-Series.By.Month$N
+plot.data<-data.frame(Time, freq, seasonal.model.trend, seasonal.fit)
+n1 <- rCharts::Highcharts$new()
+n1$title(text="Monthly Chicago Homicides 2010 - 2023")
+n1$yAxis(min=list(0),title=list(text='Homicides'))
+n1$xAxis(categories = plot.data$Time, labels=list(rotation=-45, align='right'), tickInterval=24, title=list(text='Date'))
+n1$series(name='Homicide Count',type='column',data = as.list(plot.data$freq), color = 'red')
+n1$series(name='Trend Line',type='line',data=as.list(plot.data$seasonal.model.trend), color='black')
+n1$series(name='Fit Line',type='line',data=as.list(plot.data$seasonal.fit), color='grey')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1model.html", standalone = TRUE)
+
+Seasonal.Decomp.MAPE<-mean(abs(Series.By.Month.TS-seasonal.fit)/Series.By.Month.TS)
+Seasonal.Decomp.MAPE
+
+Seasonal.Decomp.MASE<-mean(abs(Series.By.Month.TS[13:161]-seasonal.fit[13:161]))/mean(abs(Series.By.Month.TS[13:161]-Series.By.Month.TS[1:149]))
+Seasonal.Decomp.MASE
+```
+
+### Seasonal Model Visualization
+
+<iframe src="n1model.html" align="center" width="900" height="600" frameBorder="0">
+
+</iframe>
+
+Answer the following questions: Is the overall homicide rate getting better or worse in Chicago right now (i.e. what is the trend over the last couple of months)? Support your assertions using your analysis (a good visualization helps here).
+
+### Part 3: Forecasting
+
+Use the techniques/code you learned for time series forecasting in this week's in-class lab to analyze the data you have downloaded in order to develop a forecast for the rest of the year.
+
+```{r}
+seasonal.forecast<-forecast(seasonal.model, method='naive')
+plot.ts(seasonal.forecast$mean, ylim=c(min(seasonal.forecast$lower[,2]),max(seasonal.forecast$upper[,2])), lwd=2,       # PlotForecast
+        main='Seasonal Model 2 Year Forecast')              
+lines(seasonal.forecast$lower[,1], lwd=2, lty=2)            # 80% PI 
+lines(seasonal.forecast$upper[,1], lwd=2, lty=2)            # 80% PI 
+lines(seasonal.forecast$lower[,2], lwd=1, lty=2)            # 90% PI
+lines(seasonal.forecast$upper[,2], lwd=1, lty=2)            # 90% PI
+```
+
+```{r}
+toJSONArray2 <- function(obj, json = TRUE, names = TRUE, ...){
+  value = lapply(1:nrow(obj), function(i) {
+    res <- as.list(obj[i, ])
+    if (!names) names(res) <- NULL  # remove names (e.g. {x = 1, y = 2} => {1, 2})
+    return(res)
+  })
+  if (json){
+    return(toJSON(value, .withNames = F, ...))
+  } else {
+    names(value) <- NULL;
+    return(value)
+  }
+}
+
+### Create Series for Forecast Plots By Appending 'NA' data as needed
+seasonal.forecast.mean<-c(rep(NA, length=length(Series.By.Month.TS)), seasonal.forecast$mean[1:12])
+seasonal.forecast.lower<-c(rep(NA, length=length(Series.By.Month.TS)), seasonal.forecast$lower[1:12,1]) 
+seasonal.forecast.upper<-c(rep(NA, length=length(Series.By.Month.TS)), seasonal.forecast$upper[1:12,1]) 
+Time.Add<-paste(c(rep(6:12), rep(1:5)), c(rep(2023,6), rep(2024, 5))) 
+Time.new<-c(Time, Time.Add)                   
+freq.new<-c(Series.By.Month$N, rep(NA, 12))
+seasonal.fit.new<-c(seasonal.fit, rep(NA, 12))
+plot.data<-transform(data.frame(Time.new, freq.new, seasonal.fit.new, seasonal.forecast.mean, 
+              seasonal.forecast.lower, seasonal.forecast.upper))
+n1 <- rCharts::Highcharts$new()
+n1$yAxis(min=list(0),title=list(text='Chicago Homicides'))
+n1$xAxis(categories = plot.data$Time.new, labels=list(rotation=-45, align='right'), tickInterval=24, title=list(text='Date'))
+n1$series(
+  name = '80% Forecast Interval',
+  data = toJSONArray2(plot.data[,c('Time.new', 'seasonal.forecast.lower', 'seasonal.forecast.upper')], names = F, json = F),
+  type = 'arearange',
+  fillOpacity = 0.8,
+  lineWidth = 0,
+  color = 'lightgrey',
+  zIndex = 0
+)
+n1$series(name='Homicide Count',type='column',data = as.list(plot.data$freq.new), color = 'red')
+n1$series(name='Fit Line',type='line',data=as.list(plot.data$seasonal.fit.new), color='black')
+n1$series(name='Forecast',type='line',data=as.list(plot.data$seasonal.forecast.mean), color='grey')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1forecast.html", standalone = TRUE)
+```
+
+```{r}
+Training.Series<-list()
+Seasonal.model<-list()
+Seasonal.Forecast<-list()
+Naive.Forecast<-list()
+Observed<-list()
+Seasonal.Forecast.Errors<-list()
+Naive.Forecast.Errors<-list()
+for(i in 37:161){
+  Training.Series[[i]]<-ts(Series.By.Month.TS[1:(i-1)], start=c(2010,1), freq=12)
+  Naive.Forecast[[i]]<-as.vector(Series.By.Month.TS[(i-12):(i-1)])  #12 month forecast
+  Seasonal.model[[i]]<-stl(Training.Series[[i]], s.window="periodic")
+  Seasonal.Forecast[[i]]<-as.vector(forecast(Seasonal.model[[i]], method='naive')$mean)[1:12]
+  Observed[[i]]<-as.vector(Series.By.Month.TS[i:(i+11)])
+  Naive.Forecast.Errors[[i]]<-Observed[[i]]-Naive.Forecast[[i]] #12 months of error
+  Seasonal.Forecast.Errors[[i]]<-Seasonal.Forecast[[i]]-Observed[[i]]
+}
+
+### Seasonal Model Performance Evaluation
+Seasonal.Error.Table<-do.call(rbind, Seasonal.Forecast.Errors)
+Naive.Error.Table<-do.call(rbind, Naive.Forecast.Errors)
+Observed.Table<-do.call(rbind, Observed)
+Seasonal.1Step.MAPE<-mean(abs(Seasonal.Error.Table[,1])/Observed.Table[,1])
+Seasonal.1Yr.MAPE<-mean(abs(Seasonal.Error.Table[1:114,])/Observed.Table[1:114,])
+Seasonal.1Step.MASE<-mean(abs(Seasonal.Error.Table[,1]))/mean(abs(Naive.Error.Table[,1]))
+Seasonal.1Yr.MASE<-mean(abs(Seasonal.Error.Table[1:114,]))/mean(abs(Naive.Error.Table[1:114,]))
+Seasonal.Decomp.MASE<-mean(abs(Series.By.Month.TS[13:161]-seasonal.fit[13:161]))/mean(abs(Series.By.Month.TS[13:161]-Series.By.Month.TS[1:149]))
+Seasonal.Fitted.Performance<-c(Seasonal.Decomp.MAPE, Seasonal.Decomp.MASE)
+Seasonal.Forecast.Performance.1<-c(Seasonal.1Yr.MAPE, Seasonal.1Yr.MASE)
+Perf.Matrix.1<-rbind(Seasonal.Fitted.Performance, Seasonal.Forecast.Performance.1)
+rownames(Perf.Matrix.1)<-c("Seasonal Fitted", "Seasonal Forecast (Rolling Horizon 1 Step)")
+colnames(Perf.Matrix.1)<-c("MAPE", "MASE")
+Perf.Matrix.1<-data.frame(Perf.Matrix.1)
+Perf.Matrix.1<-knitr::kable(Perf.Matrix.1, digits=3, caption="Seasonal Decomposition Model Performance Comparison")
+Perf.Matrix.1
+```
+
+```{r, results='hide'}
+# One Step Ahead Rolling Horizon Prediction
+Training.Series<-list()
+Naive.Forecast<-list()
+Seasonal.model<-list()
+Seasonal.Forecast<-list()
+ARIMA.model<-list()
+ARIMA.Forecast<-list()
+HW.model<-list()
+HW.Forecast<-list()
+Observed<-list()
+Naive.Forecast.Errors<-list()
+HW.Forecast.Errors<-list()
+ARIMA.Forecast.Errors<-list()
+for(i in 37:161){    # Need 3 years of observation for setup of seasonal models so start at obs 36
+  Training.Series[[i]]<-ts(Series.By.Month.TS[1:(i-1)], start=c(2010,1), freq=12)
+  Naive.Forecast[[i]]<-as.vector(Series.By.Month.TS[(i-12):(i-1)])  #12 month forecast
+  HW.model[[i]]<-ets(y=Training.Series[[i]],model='AAN')
+  HW.Forecast[[i]]<-forecast(HW.model[[i]])$mean[1:12]  #12 month forecast
+  Seasonal.model[[i]]<-stl(Training.Series[[i]], s.window="periodic")
+  Seasonal.Forecast[[i]]<-as.vector(forecast(Seasonal.model[[i]], method='naive')$mean)[1:12]  
+  ARIMA.model[[i]]<-auto.arima(Training.Series[[i]])
+  ARIMA.Forecast[[i]]<-forecast(ARIMA.model[[i]])$mean[1:12]  #12 month forecast
+  Observed[[i]]<-as.vector(Series.By.Month.TS[i:(i+11)])  #next 12 month observations
+  Seasonal.Forecast.Errors[[i]]<-Seasonal.Forecast[[i]]-Observed[[i]]
+  Naive.Forecast.Errors[[i]]<-Observed[[i]]-Naive.Forecast[[i]] #12 months of error
+  HW.Forecast.Errors[[i]]<-Observed[[i]]-HW.Forecast[[i]]
+  ARIMA.Forecast.Errors[[i]]<-Observed[[i]]-ARIMA.Forecast[[i]]
+  print(i)  #so we can see progress
+}
+ARIMA.1Step.Forecast<-do.call(rbind, ARIMA.Forecast)[,1]
+HW.1Step.Forecast<-do.call(rbind, HW.Forecast)[,1]
+Seasonal.1Step.Forecast<-do.call(rbind, Seasonal.Forecast)[,1]
+Naive.1Step.Forecast<-do.call(rbind, Naive.Forecast)[,1]
+
+##### HighChart of Forecasting Model 1-Step Ahead Performance
+Time<-paste(Series.By.Month$month[37:161], Series.By.Month$year[37:161])
+freq<-Series.By.Month$N[37:161]
+x<-data.frame(Time, freq,  Seasonal.1Step.Forecast, HW.1Step.Forecast, ARIMA.1Step.Forecast)
+n1 <- rCharts::Highcharts$new()
+n1$yAxis(min=list(0),title=list(text='Homicide One Step Ahead Forecast Model Comparison'))
+n1$xAxis(categories = x$Time, labels=list(rotation=-45, align='right'), tickInterval=24, title=list(text='Date'))
+n1$series(name='Homicide Count',type='column',data = as.list(x$freq), color = 'red')
+n1$series(name='Seasonal',type='line',data=as.list(x$Seasonal.1Step.Forecast), color='grey')
+n1$series(name='ARIMA',type='line',data=as.list(x$ARIMA.1Step.Forecast), color='blue')
+n1$series(name='AAN',type='line',data=as.list(x$HW.1Step.Forecast), color='green')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1compare.html", standalone = TRUE)
+```
+
+```{r}
+### Calculate MAPE Performance for 1 Step and 1 YR Forecasts
+Observed.Table<-do.call(rbind, Observed)
+Naive.Error.Table<-do.call(rbind, Naive.Forecast.Errors)
+HW.Error.Table<-do.call(rbind, HW.Forecast.Errors)
+ARIMA.Error.Table<-do.call(rbind, ARIMA.Forecast.Errors)
+Naive.1Step.MAPE<-mean(abs(Naive.Error.Table[,1])/Observed.Table[,1])
+Naive.1Yr.MAPE<-mean(abs(Naive.Error.Table[1:114,])/Observed.Table[1:114,])  #Full years end in 2022
+Seasonal.1Step.MAPE<-mean(abs(Seasonal.Error.Table[,1])/Observed.Table[,1])
+Seasonal.1Yr.MAPE<-mean(abs(Seasonal.Error.Table[1:114,])/Observed.Table[1:114,])  #Full years end in 2022
+
+HW.1Step.MAPE<-mean(abs(HW.Error.Table[,1])/Observed.Table[,1])
+HW.1Yr.MAPE<-mean(abs(HW.Error.Table[1:114,])/Observed.Table[1:114,])  #Full years end in 2014
+ARIMA.1Step.MAPE<-mean(abs(ARIMA.Error.Table[,1])/Observed.Table[,1])
+ARIMA.1Yr.MAPE<-mean(abs(ARIMA.Error.Table[1:114,])/Observed.Table[1:114,])  #Full years end in 2022
+
+
+####### Calculate MASE Performance
+Seasonal.1Step.MASE<-mean(abs(Seasonal.Error.Table[,1]))/mean(abs(Naive.Error.Table[,1]))
+Seasonal.1Yr.MASE<-mean(abs(Seasonal.Error.Table[1:114,]))/mean(abs(Naive.Error.Table[1:114,]))
+HW.1Step.MASE<-mean(abs(HW.Error.Table[,1]))/mean(abs(Naive.Error.Table[,1]))
+HW.1Yr.MASE<-mean(abs(HW.Error.Table[1:114,]))/mean(abs(Naive.Error.Table[1:114,]))
+ARIMA.1Step.MASE<-mean(abs(ARIMA.Error.Table[,1]))/mean(abs(Naive.Error.Table[,1]))
+ARIMA.1Yr.MASE<-mean(abs(ARIMA.Error.Table[1:114,]))/mean(abs(Naive.Error.Table[1:114,]))
+
+# Create the table rows
+Naive.Performance<-cbind(Naive.1Step.MAPE, Naive.1Yr.MAPE, 1, 1)
+Seasonal.Performance<-cbind(Seasonal.1Step.MAPE, Seasonal.1Yr.MAPE, Seasonal.1Step.MASE, Seasonal.1Yr.MASE)
+HW.Performance<-cbind(HW.1Step.MAPE, HW.1Yr.MAPE, HW.1Step.MASE, HW.1Yr.MASE)
+ARIMA.Performance<-cbind(ARIMA.1Step.MAPE, ARIMA.1Yr.MAPE, ARIMA.1Step.MASE, ARIMA.1Yr.MASE)
+
+# Create the table for display
+Performance.Matrix<-rbind(Naive.Performance, Seasonal.Performance, HW.Performance, ARIMA.Performance)
+Performance.Matrix<-signif(Performance.Matrix, 2)
+Performance.Matrix<-cbind(c("Naive", "Seasonal Decomposition", "Holt-Winters", "ARIMA"), Performance.Matrix)
+Performance.Matrix<-data.frame(Performance.Matrix)
+colnames(Performance.Matrix)<-c("Model", "1 Step MAPE", "12 Step MAPE", "1 Step MASE", "12 Step MASE")
+Performance.Matrix<-knitr::kable(Performance.Matrix, digits=2) #prints a pretty table
+Performance.Matrix
+```
+
+```{r}
+# Build and Evaluate an Ensemble Forecast
+Seasonal.Forecast.Table<-na.omit(do.call(rbind, Seasonal.Forecast))
+HW.Forecast.Table<-na.omit(do.call(rbind, HW.Forecast))
+ARIMA.Forecast.Table<-na.omit(do.call(rbind, ARIMA.Forecast))
+Ensemble.Forecast.Table<-(Seasonal.Forecast.Table + HW.Forecast.Table + ARIMA.Forecast.Table)/3
+Ensemble.1Step.Forecast<-Ensemble.Forecast.Table[,1]
+Ensemble.Error.Table<-Observed.Table-Ensemble.Forecast.Table[1:125,]
+Ensemble.1Step.MAPE<-mean(abs(Ensemble.Error.Table[,1])/Observed.Table[,1]) 
+Ensemble.1Yr.MAPE<-mean(abs(Ensemble.Error.Table[1:114,])/Observed.Table[1:114,]) 
+Ensemble.1Step.MASE<-mean(abs(Ensemble.Error.Table[,1]))/mean(abs(Naive.Error.Table[,1]))
+Ensemble.1Yr.MASE<-mean(abs(Ensemble.Error.Table[1:114,]))/mean(abs(Naive.Error.Table[1:114,]))
+
+# Building rows of table again
+Naive.Performance<-cbind(Naive.1Step.MAPE, Naive.1Yr.MAPE, 1, 1)
+Seasonal.Performance<-cbind(Seasonal.1Step.MAPE, Seasonal.1Yr.MAPE, Seasonal.1Step.MASE, Seasonal.1Yr.MASE)
+HW.Performance<-cbind(HW.1Step.MAPE, HW.1Yr.MAPE, HW.1Step.MASE, HW.1Yr.MASE)
+ARIMA.Performance<-cbind(ARIMA.1Step.MAPE, ARIMA.1Yr.MAPE, ARIMA.1Step.MASE, ARIMA.1Yr.MASE)
+Ensemble.Performance<-cbind(Ensemble.1Step.MAPE, Ensemble.1Yr.MAPE, Ensemble.1Step.MASE, Ensemble.1Yr.MASE)
+
+# Building full table again
+Performance.Matrix<-rbind(Naive.Performance, Seasonal.Performance, HW.Performance, ARIMA.Performance, Ensemble.Performance)
+Performance.Matrix<-signif(Performance.Matrix, 2)
+Performance.Matrix<-cbind(c("Naive", "Seasonal Decomposition", "Holt-Winters", "ARIMA", 
+                            "Ensemble"), Performance.Matrix)
+Performance.Matrix<-data.frame(Performance.Matrix)
+colnames(Performance.Matrix)<-c("Model", "1 Step MAPE", "12 Step MAPE", "1 Step MASE", "12 Step MASE")
+Performance.Matrix<-knitr::kable(Performance.Matrix, digits=2, caption='Model Performance Comparison')
+Performance.Matrix
+```
+
+```{r}
+n1$series(name='Ensemble',type='line',data=as.list(Ensemble.1Step.Forecast), color='black')
+n1$save("n1ensemble.html", standalone = TRUE)
+```
+
+```{r}
+#ARIMA Forecast
+arima.model<-auto.arima(Series.By.Month.TS)
+
+arima.forecast<-forecast(arima.model)
+plot.ts(arima.forecast$mean, ylim=c(0,125), lwd=2,       # PlotForecast
+        main='ARIMA Model 2 Year Forecast')              
+lines(arima.forecast$lower[,1], lwd=2, lty=2)            # 80% PI 
+lines(arima.forecast$upper[,1], lwd=2, lty=2)            # 80% PI 
+lines(arima.forecast$lower[,2], lwd=1, lty=2)            # 90% PI
+lines(arima.forecast$upper[,2], lwd=1, lty=2)            # 90% PI
+
+arima.fit<-as.vector(arima.model$fitted)
+```
+
+```{r}
+### Create Series for Forecast Plots By Appending 'NA' data as needed
+Time<-paste(Series.By.Month$month, Series.By.Month$year)
+freq<-Series.By.Month$N
+arima.forecast.mean<-c(rep(NA, length=length(Series.By.Month.TS)), arima.forecast$mean[1:12])
+arima.forecast.lower<-c(rep(NA, length=length(Series.By.Month.TS)), arima.forecast$lower[1:12,1]) 
+arima.forecast.upper<-c(rep(NA, length=length(Series.By.Month.TS)), arima.forecast$upper[1:12,1]) 
+Time.Add<-paste(c(rep(6:12), rep(1:5)), c(rep(2023,6), rep(2024, 5))) 
+Time.new<-c(Time, Time.Add)                   
+freq.new<-c(Series.By.Month$N, rep(NA, 12))
+arima.fit.new<-c(arima.fit, rep(NA, 12))
+plot.data<-transform(data.frame(Time.new, freq.new, arima.fit.new, arima.forecast.mean, 
+              arima.forecast.lower, arima.forecast.upper))
+n1 <- rCharts::Highcharts$new()
+n1$yAxis(min=list(0),title=list(text='Chicago Homicides'))
+n1$xAxis(categories = plot.data$Time.new, labels=list(rotation=-45, align='right'), tickInterval=24, title=list(text='Date'))
+n1$series(
+  name = '80% Forecast Interval',
+  data = toJSONArray2(plot.data[,c('Time.new', 'arima.forecast.lower', 'arima.forecast.upper')], names = F, json = F),
+  type = 'arearange',
+  fillOpacity = 0.8,
+  lineWidth = 0,
+  color = 'lightgrey',
+  zIndex = 0
+)
+n1$series(name='Homicide Count',type='column',data = as.list(plot.data$freq.new), color = 'red')
+n1$series(name='Fit Line',type='line',data=as.list(plot.data$arima.fit.new), color='black')
+n1$series(name='Forecast',type='line',data=as.list(plot.data$arima.forecast.mean), color='grey')
+n1$chart(zoomType='x')  #Allows you to select sub-sections for zoom
+n1$save("n1arimaforecast.html", standalone = TRUE)
+```
+
+Question 2: Provide the following in your written lab report:
+
+Compare the short-term forecasting performance of at least three of the forecasting techniques you studied (you can use the seasonal Naive model as one of the techniques if you wish). Which of these techniques is best for this use case?
+
+### Model Comparisons
+
+<iframe src="n1compare.html" align="center" width="900" height="600" frameBorder="0">
+
+</iframe>
+
+```{r, echo=FALSE}
+Performance.Matrix
+```
+
+Provide a graphic/visualization illustrating your forecast (and your uncertainty in the forecast) for the rest of the year.
+
+### ARIMA Model Forecast
+
+<iframe src="n1arimaforecast.html" align="center" width="900" height="600" frameBorder="0">
+
+</iframe>
+
+Provide a short written summary appropriate for leaders in government about what you expect to happen over the next year, especially during the summer months when crime peaks. Do you expect things to be better or worse this summer than last summer?
