@@ -561,6 +561,8 @@ Seasonal.Decomp.MASE
 
 Answer the following questions: Is the overall homicide rate getting better or worse in Chicago right now (i.e. what is the trend over the last couple of months)? Support your assertions using your analysis (a good visualization helps here).
 
+As seen in the plot above, there is a negative trend occurring over the last three years. The 2020 spike coincides with the start of COVID-19 stay at home orders which were issued in late March 2020 in Illinois. Eddie Bocanegra, the senior director of Readi Chicago was quoted in a CNN article from JAN 2021 stating "I think Covid was the straw that broke the camel's back... It's almost like these communities were just having their heads above the water, and then Covid hit and they just sunk." This theory is also supported by the negative trend in the four years leading up to the Covid stay at home orders.
+
 ### Part 3: Forecasting
 
 Use the techniques/code you learned for time series forecasting in this week's in-class lab to analyze the data you have downloaded in order to develop a forecast for the rest of the year.
@@ -844,6 +846,8 @@ Compare the short-term forecasting performance of at least three of the forecast
 Performance.Matrix
 ```
 
+As seen in the performance matrix above, the averaged ensemble model is the most accurate in both the 1 and 12 step cases, however development of a confidence interval is much more difficult for this model. For that reason, we will leverage the next highest performing model, ARIMA, for the forecast and accept slightly worse forecast performance for ease of confidence computation.
+
 Provide a graphic/visualization illustrating your forecast (and your uncertainty in the forecast) for the rest of the year.
 
 ### ARIMA Model Forecast
@@ -853,3 +857,5 @@ Provide a graphic/visualization illustrating your forecast (and your uncertainty
 </iframe>
 
 Provide a short written summary appropriate for leaders in government about what you expect to happen over the next year, especially during the summer months when crime peaks. Do you expect things to be better or worse this summer than last summer?
+
+Based on the ARIMA Model forecast above, no worse than last summer at an 80% confidence level (upper range of grey interval). The model forecasts the peak to occur in July. Three of the last seven years also peaked in the month of July. The model also forecasts 70 murders in July which is consistent with the previous three year trend of roughly 10 less murders in July per year. The model also forecasts the low for 2024 to occur in Feb/Mar, consistent with 10 of the 13 years of the data. However, as this is 9 months out, the 80% confidence band is much wider than the summer forecast which is only two to three months.
