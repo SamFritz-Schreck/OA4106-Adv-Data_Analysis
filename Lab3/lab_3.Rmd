@@ -1,0 +1,641 @@
+---
+title: "Lab_3"
+author: "Sam Fritz-Schreck"
+date: "2023-08-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+## Libraries for Plotting our Results
+library(ggplot2)
+library(ggfortify)
+library(gridExtra)
+
+library(e1071)
+library(ROCR)
+library(rpart.plot)
+```
+
+## PCA
+
+```{r}
+wine.data = read.csv('wine.csv')
+wine.data$Type = as.factor(wine.data$Type)
+scaled.wine.data = data.frame(scale(wine.data[,-c(1)]))
+
+pca = princomp(scaled.wine.data)
+plot(pca)
+```
+
+```{r}
+plot(cumsum(pca$sdev^2/sum(pca$sdev^2)))
+```
+
+```{r}
+pca$loadings
+```
+
+```{r}
+pc = prcomp(scaled.wine.data)
+plot(pc)
+```
+
+```{r}
+plot(cumsum(pc$sdev^2/sum(pc$sdev^2)))
+```
+
+```{r}
+# First 7 principal components
+comp <- data.frame(pc$x[,1:7])
+# Plot
+plot(comp, pch=16, col=rgb(0,0,0,0.5))
+```
+
+### Questions
+
+1. Apply PCA to “wine” dataset with all numerical variables and reduce the dimension.
+
+2. How many principal components need to explain more than 85% of variances?
+
+I used 7 principal components to account for roughly 90% of variance.
+
+3. Is there any cluster formed by different types of wines? If so how many clusters can you see them?
+
+```{r}
+autoplot(pc, data = wine.data, colour = 'Type')
+```
+
+There looks to be three clusters which also correspond to the three Types. I can see some mix of a few points but overall, the split is pretty good at only two dimensions.
+
+### Classification
+
+#### MLR
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(nnet)
+```
+
+```{r}
+# Split the data into training and test set
+set.seed(123)
+pca.data = cbind(wine.data$Type, comp)
+names(pca.data)[1] = 'Type'
+training.samples <- wine.data$Type %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- pca.data[training.samples, ]
+test.data <- pca.data[-training.samples, ]
+
+mlr = multinom_reg() |> 
+  fit(Type~., data = train.data)
+
+# Summarize the model
+tidy(mlr, exponentiate = TRUE, conf.int = TRUE) |> 
+  mutate_if(is.numeric, round, 4) |> 
+  select(-std.error, -statistic)
+```
+
+```{r}
+Type_preds <- mlr |> 
+  augment(new_data = test.data)
+
+conf_mat(Type_preds, truth = Type, estimate = .pred_class)
+
+roc_auc(Type_preds, truth = Type, .pred_1, .pred_2, .pred_3)
+```
+
+```{r}
+roc_curve(Type_preds, truth = Type, .pred_1, .pred_2, .pred_3) |> 
+  ggplot(aes(x = 1 - specificity, y = sensitivity, color = .level)) +
+  geom_line(size = 1, alpha = 0.7) +
+  geom_abline(slope = 1, linetype = "dotted") +
+  coord_fixed() +
+  labs(color = NULL) +
+  theme_light()
+```
+
+```{r}
+possibilities <- expand_grid(
+  PC1 = seq(-4.31, 4.27, length.out = 10),
+  PC2 = seq(-3.51, 3.87, length.out = 10),
+  PC3 = seq(-4.57, 5.33, length.out = 10),
+  PC4 = seq(-2.88, 3.78, length.out = 10),
+  PC5 = seq(-4.18, 2.02, length.out = 10),
+  PC6 = seq(-1.91, 3.28, length.out = 10),
+  PC7 = seq(-1.63, 2.64, length.out = 10)
+)
+
+possibilities <- bind_cols(possibilities,
+                           predict(mlr, new_data = possibilities))
+
+possibilities |> 
+  ggplot(aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = .pred_class), alpha = 0.1) +
+  geom_point(data = test.data, aes(color = Type, shape = Type),
+             size = 2,
+             alpha = 0.8) +
+  labs(color = "Type", shape = "Type") +
+  theme_light()
+```
+
+#### SVM
+
+```{r}
+svm_rbf_spec <- svm_rbf() %>%
+  set_mode("classification") %>%
+  set_engine("kernlab", scaled = FALSE)
+
+svm_rbf_fit <- svm_rbf_spec %>% 
+  fit(Type ~ ., data = train.data)
+
+svm_rbf_fit
+
+augment(svm_rbf_fit, new_data = test.data) %>%
+  conf_mat(truth = Type, estimate = .pred_class)
+
+augment(svm_rbf_fit, new_data = test.data) %>%
+  roc_curve(truth = Type, .pred_1, .pred_2, .pred_3) %>%
+  autoplot()
+
+augment(svm_rbf_fit, new_data = test.data) %>%
+  roc_auc(truth = Type, .pred_1, .pred_2, .pred_3)
+```
+
+#### KNN
+
+```{r}
+#make a knn spec
+knn_spec <- nearest_neighbor() %>% 
+  set_engine("kknn") %>% 
+  set_mode("classification")
+
+#use the knn spec to fit the pre-processed training data
+knn_fit <- knn_spec %>% 
+  fit(Type ~., data = train.data)
+
+augment(knn_fit, new_data = test.data) %>%
+  conf_mat(truth = Type, estimate = .pred_class)
+
+augment(knn_fit, new_data = test.data) %>%
+  roc_curve(truth = Type, .pred_1, .pred_2, .pred_3) %>%
+  autoplot()
+
+augment(knn_fit, new_data = test.data) %>%
+  roc_auc(truth = Type, .pred_1, .pred_2, .pred_3)
+```
+
+#### CART
+```{r}
+tree_spec <- decision_tree() %>%
+  set_engine("rpart")
+
+class_tree_spec <- tree_spec %>%
+  set_mode("classification")
+
+class_tree_fit <- class_tree_spec %>%
+  fit(Type ~ ., data = train.data)
+
+class_tree_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot()
+
+augment(class_tree_fit, new_data = test.data) %>%
+  conf_mat(truth = Type, estimate = .pred_class)
+
+augment(class_tree_fit, new_data = test.data) %>%
+  roc_curve(truth = Type, .pred_1, .pred_2, .pred_3) %>%
+  autoplot()
+
+augment(class_tree_fit, new_data = test.data) %>%
+  roc_auc(truth = Type, .pred_1, .pred_2, .pred_3)
+```
+
+#### RF
+```{r}
+#make a rf spec
+rf_spec <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+#use the rf spec to fit the pre-processed training data
+rf_fit <- rf_spec %>% 
+  fit(Type ~., data = train.data)
+
+augment(rf_fit, new_data = test.data) %>%
+  conf_mat(truth = Type, estimate = .pred_class)
+
+augment(rf_fit, new_data = test.data) %>%
+  roc_curve(truth = Type, .pred_1, .pred_2, .pred_3) %>%
+  autoplot()
+
+augment(rf_fit, new_data = test.data) %>%
+  roc_auc(truth = Type, .pred_1, .pred_2, .pred_3)
+```
+
+## Clustering
+```{r}
+
+## Libraries for Plotting our Results
+library(ggplot2)
+library(ggfortify)
+library(gridExtra)
+
+library(GGally)      # some nice plot extensions to ggplot
+library(cowplot)     # allows us to create matrix plots
+
+library(varhandle)   # provides unfactor() function
+library(cluster)     # provides bottom-up clustering support
+library(factoextra)  # support for plotting of clusters
+
+library(dbscan)      # support for the dbscan algorithm
+set.seed(125)        # so we get consistent results for rendering this tutorial
+
+diabetes_data <- read.csv("diabetes.csv", sep=",")
+colnames(diabetes_data)<-c("Pregnancies","Glucose","BloodPressure","SkinThickness","Insulin","BMI","PedigreeFunction","Age","Outcome")
+diabetes_data$Outcome <- as.factor(diabetes_data$Outcome)
+summary(diabetes_data)
+```
+
+```{r}
+diabetes_matrix = data.frame(scale(diabetes_data[, -c(9)]))
+
+pc = prcomp(diabetes_matrix)
+
+# Plot of Variance Explained
+plot(cumsum(pc$sdev^2/sum(pc$sdev^2)), main = 'Cumulative Variance Explained by Components', 
+     ylab="Explained", xlab="Component")
+```
+
+```{r}
+pc_plot1 <- autoplot(pc, data = diabetes_data, main = "Plot of Iris Data in Principal Components Space")
+pc_plot2 <- autoplot(pc, data=diabetes_data, colour = "Outcome", main = "Plot of Iris Data in Principal Components Space") 
+
+plot_grid(                                    # uses cowplot library to arrange grid
+  pc_plot1, pc_plot2, 
+  nrow = 1
+)
+```
+### K means
+```{r}
+# Set a maximum number of groups to explore
+k.max <- 10
+
+# Fit a kmeans cluster for each number of groups and calculate wthin sum of squares
+wss <- sapply(1:k.max, function(k){kmeans(diabetes_matrix, k)$tot.withinss})
+wss
+
+# Plot the results so we can find the "elbow"
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+# Apply silhouette method to determine clusters
+fviz_nbclust(diabetes_matrix, kmeans, method = "silhouette")
+```
+
+```{r}
+# Calculate the K-Means Clusters 
+km.out <- kmeans(diabetes_matrix, 2, nstart=20)
+km.out
+
+# Plot of assigned clusters
+fviz_cluster(list(data = diabetes_matrix, cluster = km.out$cluster))
+```
+
+```{r}
+# Comparing within sum of squares to between sum of squares
+# Between Cluster Sum of Squares 
+km.out$betweenss
+
+# Within Cluster Sum of Squares
+km.out$withinss
+
+# The Ratio
+km.out$withinss/km.out$betweenss
+```
+
+```{r}
+# Compare our results from km.out$cluster with the known values
+results.compare<-data.frame(cbind(as.character(diabetes_data$Outcome), km.out$cluster))
+table(results.compare)
+
+kmeans_accuracy <- (373+145)/768    # make sure values match table due to results changing each time algorithm is applied
+kmeans_accuracy
+```
+
+### Hierarchical
+```{r}
+# Dissimilarity matrix
+d <- dist(diabetes_matrix, method = "euclidean")   # can try different distance metrics
+
+# Hierarchical clustering using Complete Linkage
+hc_agg <- agnes(d, method = "complete" )   # can try different methods here
+hc_agg
+
+# After trying all options, ward is best fit
+hc_ward <- agnes(d, method = "ward" ) 
+hc_ward
+
+# Plot the obtained dendrogram
+pltree(hc_ward, cex = 0.6, hang = -1, main="Ward Linkage")
+
+# Cut tree into 3 groups
+hc_sub_grp <- cutree(hc_ward, k = 2)  # gives us a vector of the cluster assigned for each observation
+# Plot our clusters
+fviz_cluster(list(data = diabetes_matrix, cluster = hc_sub_grp))
+```
+
+```{r}
+# Compare our results from km.out$cluster with the known values
+hcward_results.compare<-data.frame(cbind(as.character(diabetes_data$Outcome), hc_sub_grp))
+table(hcward_results.compare)
+```
+
+```{r}
+hc_ward_accuracy <- (333+175)/768
+hc_ward_accuracy
+```
+
+```{r}
+# Compare our results from km.out$cluster with the known values
+# Conduct divisive (top down) clustering
+hc_divisive <- diana(diabetes_matrix)
+hc_divisive$dc                     # get the divisive coefficient - equivalent to ac
+```
+
+### DBSCAN
+```{r}
+##### Calculate the epsilon neighborhood - i.e. find optimal eps
+kNNdistplot(diabetes_matrix, k=5) 
+```
+
+```{r}
+# Implement DBSCAN
+db = dbscan(diabetes_matrix, eps = 2, minPts = 5, borderPoints = FALSE)
+# Visualize the results
+fviz_cluster(list(data = diabetes_matrix, cluster = db$cluster))
+```
+
+```{r}
+# Hullplot from dbscan package isn't confused by unassigned cases
+hullplot(diabetes_matrix, db$cluster)
+```
+
+```{r}
+# Compare our results from km.out$cluster with the known values
+dbscan_results.compare<-data.frame(cbind(as.character(diabetes_data$Outcome), db$cluster))
+table(dbscan_results.compare)
+
+dbscan_accuracy <- (449+48)/768
+dbscan_accuracy
+```
+
+#### Question 1
+
+Which does clustering method cluster the best based on different types of Outcomes? Justifying with pictures and accuracy rates.
+
+Discuss each of clustering method on this data set. Interpret the results, pros and cons on the data set for each method.
+
+##### K Means cluster
+```{r}
+fviz_cluster(list(data = diabetes_matrix, cluster = km.out$cluster))
+```
+
+K-means accuracy is about 67%
+
+##### Hierarchical cluster
+```{r}
+fviz_cluster(list(data = diabetes_matrix, cluster = hc_sub_grp))
+```
+
+Hierarchical accuracy is about 66%
+
+##### DBSCAN cluster
+```{r}
+fviz_cluster(list(data = diabetes_matrix, cluster = db$cluster))
+```
+
+DBSCAN accuracy is about 64%
+
+From this, we determine that K means clustering is best for this diabetes dataset. Since we know that the response is binary, we can leverage this knowledge to force k means and hierarchical into two clusters. We dont have that same option with DBSCAN resulting in a bit lower overall accuracy.
+
+### Classification
+```{r}
+diabetes_data$cluster = km.out$cluster
+
+diabetes_data$Outcome = as.factor(diabetes_data$Outcome)
+diabetes_data$cluster = as.factor(diabetes_data$cluster)
+diabetes_data[,c(1:8)] = scale(diabetes_data[,c(1:8)])
+
+training.samples <- diabetes_data$Outcome %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- diabetes_data[training.samples, ]
+test.data <- diabetes_data[-training.samples, ]
+```
+
+
+#### Logit
+```{r}
+Logit <- glm(formula = Outcome ~ .,
+               family  = binomial(link = "logit"),
+               data    = train.data)
+summary(Logit)
+
+Logit.step<-stats::step(Logit, direction = "both")
+
+summary(Logit.step)
+```
+
+```{r}
+# Put the predicted probability and class (at 0.5 threshold) at the end of the dataframe
+predProbLogit <- predict(Logit.step, type = "response", newdata = test.data)
+predClassLogit <- factor(predict(Logit.step, type = "response", newdata=test.data) > 0.45, levels = c(F,T), labels = c("0","1"))
+
+# Generate a confusion matrix and performance statistics on test dataset
+confusionMatrix(data=predClassLogit, reference=test.data$Outcome)
+
+# Calculate AUC - use @y.values to get AUC out
+Logit.AUC <- performance(prediction(predProbLogit, test.data$Outcome), measure="auc")@y.values
+Logit.AUC
+```
+
+#### SVM
+```{r}
+# Set a seed value so get same answer each time we fit
+set.seed(123)
+
+# Balance data using weights
+## SVM performs poorly when the data set is not balanced.
+wts <- 100/table(diabetes_data$Outcome)
+
+# Apply SVM model using linear kernel having default target and rest three as predictors
+ SVM <- svm(Outcome ~ .,data=train.data, kernel="linear",
+             cost=1,gamma=1, class.weight=wts,
+             probability=TRUE, decision.values=TRUE)
+
+# Get the probabilities predicted by SVM
+predProbSVM.raw <-predict(SVM, test.data, probability = TRUE)
+
+# Get the probabilitiy of "Yes" from the attributes
+predProbSVM <- attributes(predProbSVM.raw)$probabilities[,1]
+
+# Get the probability classes
+predClassSVM <- predict(SVM, newdata = test.data)
+
+confusionMatrix(predClassSVM, test.data$Outcome)
+
+# Calculate ROC statistics for our best logit model
+Logit.ROC <- performance(prediction(predProbLogit, test.data$Outcome), measure="tpr", x.measure="fpr")
+
+SVM.ROC <- performance(prediction(predProbSVM, test.data$Outcome), measure="tpr", x.measure="fpr")
+
+SVM.AUC <- performance(prediction(predProbSVM, test.data$Outcome), measure="auc")@y.values
+```
+
+#### KNN
+```{r}
+library(class) # new library for KNN modeling
+library(rpart) # new library for CART modeling
+
+# New package for making pretty pictures of CART trees
+library(rpart.plot)
+
+# Assigning the response 
+train.def <- train.data$Outcome
+test.def <- test.data$Outcome
+
+# Assign explanatory variables
+train.gc <- train.data[,c(1:8,10)]
+test.gc <- test.data[,c(1:8,10)]
+
+knn.1 <-  knn(train.gc, test.gc, train.def, k=1)
+knn.5 <-  knn(train.gc, test.gc, train.def, k=5)
+knn.20 <- knn(train.gc, test.gc, train.def, k=20)
+
+sum(test.def == knn.1)/length(test.def)  # For knn = 1
+sum(test.def == knn.5)/length(test.def) # For knn = 5
+sum(test.def == knn.20)/length(test.def)  # For knn = 20
+```
+
+```{r}
+knn <-  knn(train.gc, test.gc, train.def, k=28)
+sum(test.def == knn)/length(test.def)  # For knn = sqrt(n)
+# Confusion Matrix 
+confusionMatrix(knn, test.data$Outcome)
+```
+
+```{r}
+knn.prob <-  knn(train.gc, test.gc, train.def, k=28, prob=TRUE)
+# KNN model
+KNN.prob <- rep(0, length(knn.prob)) ## Initializing 
+
+for(i in 1:length(KNN.prob)){
+  KNN.prob[i] <- ifelse(knn.prob[i] != "0", attr(knn.prob, 'prob')[i], 1 - attr(knn.prob, 'prob')[i])
+}
+predProbKNN <- prediction(KNN.prob, test.data$Outcome)
+
+KNN.ROC <- performance(predProbKNN, measure="tpr", x.measure="fpr")
+
+KNN.AUC <- performance(prediction(KNN.prob, test.data$Outcome), 
+                       measure="auc")@y.values
+```
+
+#### CART
+```{r}
+CART <- rpart(Outcome ~., data=train.data)
+summary(CART)
+prp(CART)
+```
+
+```{r}
+predClassCART <- predict(CART, newdata = test.data, type = "class")
+confusionMatrix(predClassCART, test.data$Outcome)
+```
+
+```{r}
+predProbCART <- predict(CART, newdata = test.data, type = "prob")[,2]
+CART.ROC <- performance(prediction(predProbCART, test.data$Outcome), measure="tpr", x.measure="fpr")
+CART.AUC <- performance(prediction(predProbCART, test.data$Outcome), measure="auc")@y.values
+```
+
+
+#### RF
+```{r}
+library(randomForest) 
+
+RandomForest <- randomForest(Outcome ~ ., data=train.data, importance = TRUE, ntrees = 500)
+summary(RandomForest)
+plot(RandomForest)
+```
+
+```{r}
+# Get the probability of "yes" for default from second column
+predProbRF <- predict(RandomForest, newdata = test.data, type = "prob")[,2]
+
+
+# Get the predicted class
+predClassRF <- predict(RandomForest, newdata = test.data, type = "response")
+
+RF.ROC <- performance(prediction(predProbRF, test.data$Outcome), 
+                       measure="tpr", x.measure="fpr")
+RF.AUC <- performance(prediction(predProbRF, test.data$Outcome), 
+                       measure="auc")@y.values
+```
+
+
+#### Question 2
+
+Apply all classification models you learned in this class to this diabetes dataset to predict the type of Outcome based on the 8 different kind of chemical components. Which classification method was the best? Use AUC to decide the best one.
+
+Then, apply all classification models you learned in this class to this diabetes dataset to predict the type of Outcome based on the 8 different kind of chemical components and the results from one clustering method from the first part. Explain why you pick one out of all clustering methods. Which classification method was the best? Use AUC to decide the best one.
+
+Does including results from clustering methods increase the accuracy rates?
+
+We see from model summaries that the identified cluster from K means does not play a significant role in the Logit or CART models. CART is also the worst model in terms of AUC. However, we know that cluster is getting used in random trees within the RF model, which is our best performing model. It is possible that there is interaction or correlation between multiple predictors that is not captured within the Logit or CART models that is getting leveled out in the RF model.
+
+Interpret the result from each classifying method. Pros and cons?
+
+```{r}
+### Plot our ROC Performance with Logit as base
+plot(Logit.ROC, lwd=2, main = "ROC Comparison for Models on Test Dataset")
+
+# Add SVM
+lines(attributes(SVM.ROC)$x.values[[1]], attributes(SVM.ROC)$y.values[[1]], 
+      col="red", lwd=2)
+
+# Add KNN
+lines(attributes(KNN.ROC)$x.values[[1]], attributes(KNN.ROC)$y.values[[1]], 
+      col="blue", lwd=2)
+
+# Add CART 
+lines(attributes(CART.ROC)$x.values[[1]], attributes(CART.ROC)$y.values[[1]], 
+      col="green", lwd=2)
+
+# Add RF
+lines(attributes(RF.ROC)$x.values[[1]], attributes(RF.ROC)$y.values[[1]], 
+      col="Brown", lwd=2)
+
+#Add Legend
+legend(x=.5, y=.6, c("Logistic (Step)", "SVM", "KNN", "CART", "RF"), 
+       col=c("black", "red", "blue", "green", "Brown"), lwd=c(2,2,2,2,2))
+```
+
+
+Which one is the best one among all classifiers?
+
+```{r}
+Logit.AUC
+
+SVM.AUC
+
+KNN.AUC
+
+CART.AUC
+
+RF.AUC
+```
+

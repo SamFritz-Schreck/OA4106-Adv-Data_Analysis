@@ -1,0 +1,337 @@
+---
+title: "Wk5_in_lab"
+author: "Sam Fritz-Schreck"
+date: "2023-07-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Support Vector Machine (SVM) Models
+
+#### Support Vector Machines Overview
+This practical application exercise will perform the same analysis conducted in the last practical application. However, we will make a few changes to the previous analysis:
+
+- We will fit SVM models instead of logistic regression models
+- We will compare the performance of our logistic regression model to our new SVM model
+- We will evaluate the difference in performance between training and test sets with the SVM model and briefly discuss how model tuning generates the need for validation datasets.
+
+#### Step 1: Set Up R Environment for Lecture Example Analysis
+Let’s begin by setting up our environment to continue with our lecture examples. Perform the following tasks:
+
+- Open the jupyter notebook you saved under the file name “LectureExampleData2” so that you can continue building out the lecture examples 
+- Load the lecture examples workspace you saved under the file name “LectureExampleData2.RData” 
+
+You will also need to load the "e1071" library for fitting SVM models and the other packages we’ve used previously:
+
+```{r message = FALSE, warning=FALSE}
+# Package for fitting SVM
+library(e1071)
+
+## Library for An Introduction to Statistical Learning with Applications in R
+library(ISLR)
+
+## Libraries for Plotting our Results
+library(ggplot2)
+library(gridExtra)
+
+## Library for confusion matrix
+library(caret)
+```
+
+#### Step 2: Visualize the Data
+
+As a reminder of the data we are working with for the lecture examples, here is a quick summary and plot of the “Default” dataset containing all the data (this isn’t split into training and test datasets):
+
+```{r message = FALSE, warning=FALSE}
+# Data Summary
+summary(Default) 
+```
+
+
+```{r message = FALSE, warning=FALSE}
+## Data plot
+plotData <- ggplot(data = Default,
+       mapping = aes(x = balance, y = income, color = default)) +
+    layer(geom = "point", stat = "identity", position = "identity") +
+    scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+    theme_bw() +
+    theme(legend.key = element_blank()) +
+    labs(title = "Original data")
+plotData
+```
+
+We will be using the previously split training and test datasets, which should be stored in your workspace file as Lecture.Train and Lecture.Test.
+
+#### Step 3: Fit an SVM model with Defaults
+
+The code below fits an SVM model with the default settings (i.e. no tuning):
+
+```{r echo=FALSE, message = FALSE, warning=FALSE}
+# Partition of data set into 80% Train and 20% Test datasets
+set.seed(123)  # ensures we all get the sample sample of data for train/test
+
+sampler <- sample(nrow(Default),trunc(nrow(Default)*.80)) # samples index 
+
+Lecture.Train <- Default[sampler,]
+Lecture.Test <- Default[-sampler,]
+Lecture.Test.Plotting <- Lecture.Test
+
+plotTest<-ggplot(data = Lecture.Test.Plotting,
+                 mapping = aes(x = balance, y = income, color = default, shape = student)) +
+  layer(geom = "point", stat = "identity", position = "identity") +
+  scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Test Data")
+plotTest
+```
+
+You do not have to use scale() function since the svm() function applies scale function by its default.  
+
+Also since this "Default" data set has much more data points with non-default status and since SVM performs very poorly we have to "balance" the data set by setting a weight on each data point.    
+
+```{r message = FALSE, warning=FALSE}
+# Set a seed value so get same answer each time we fit
+set.seed(123)
+
+# Balance data using weights
+## SVM performs poorly when the data set is not balanced.
+wts <- 100/table(Default$default)
+
+# Apply SVM model using linear kernel having default target and rest three as predictors
+SVM.1 <- svm(default ~ .,data=Lecture.Train, kernel="linear",
+             cost=1,gamma=1, class.weight=wts,
+             probability=TRUE, decision.values=TRUE)
+summary(SVM.1)
+```
+
+We can capture the predicted probabilities and classes using the code below. We will then attach these values to our Lecture.Test.Plotting dataframe as we did with the logistic regression model.
+
+```{r message = FALSE, warning=FALSE}
+# Get the probabilities predicted by SVM
+predProbSVM.raw <-predict(SVM.1, Lecture.Test, probability = TRUE)
+
+# Get the probabilitiy of "Yes" from the attributes
+predProbSVM.1 <- attributes(predProbSVM.raw)$probabilities[,2]
+
+# Get the probability classes
+predClassSVM.1 <- predict(SVM.1, newdata = Lecture.Test)
+
+# Attach to our plotting dataframe
+Lecture.Test.Plotting$predProbSVM.1  <- predProbSVM.1
+Lecture.Test.Plotting$predClassSVM.1 <- predClassSVM.1 
+```
+
+As before, we can plot the probabilites and the assigned classes and compare them to the known values.
+```{r message = FALSE, warning=FALSE}
+# Plot (probability)
+plotSVM.1 <- ggplot(data = Lecture.Test.Plotting,
+                    mapping = aes(x = balance, y = income, color = predProbSVM.1, shape = student)) +
+  layer(geom = "point",stat = "identity", position = "identity") +
+  scale_color_gradient(low = "blue", high = "red") +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Predicted probability of outcome (SVM)")
+
+## Plot the class using threshold of 0.5
+plotSVMClass <- ggplot(data = Lecture.Test.Plotting,
+                       mapping = aes(x = balance, y = income, color = predClassSVM.1, shape = student)) +
+  layer(geom = "point", stat = "identity", position = "identity") +
+  scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Predicted outcome (SVM; p>0.5)")
+
+# Plot original data (top row), predicted probability (second row), and assigned class (third row)
+grid.arrange(plotTest, plotSVM.1, plotSVMClass, nrow = 3)
+```
+
+It is somewhat hard to evaluate the performance with the plots above, so let’s use the confusionMatrix function to compare the performance of this model to the logistic regression model we fit earlier. The confusion matrix for our default SVM model is:
+```{r message = FALSE, warning=FALSE}
+# Report confusion matrix from SVM model for comparison
+confusionMatrix(predClassSVM.1, Lecture.Test$default)
+```
+
+```{r echo=FALSE, cache=FALSE, results=FALSE, message = FALSE, warning=FALSE}
+Logit.1 <- glm(formula = default ~ .,
+               family  = binomial(link = "logit"),
+               data    = Lecture.Train)
+Logit.2 <- glm(formula = default ~ scale(balance) + scale(income),
+               family  = binomial(link = "logit"),
+               data    = Lecture.Train)
+Logit.step<-step(Logit.1, direction = "both")
+# Put the predicted probability and class (at 0.5 threshold) at the end of the dataframe
+predProbLogit <- predict(Logit.step, type = "response", newdata = Lecture.Test)
+predClassLogit <- factor(predict(Logit.step, type = "response", newdata=Lecture.Test) > 0.5, levels = c(FALSE,TRUE), labels = c("No","Yes"))
+```
+
+#### Step 4: Tuning the SVM Model 
+
+Now, we can build a tuned SVM model by exploring the parameter space with the tune command. We’ll store the best model as SVM.Best.
+
+Referencing our previous work, we can compare that performance to our logistic regression model.
+
+```{r message = FALSE, warning=FALSE}
+# Report confusion matrix from logit model for comparison
+confusionMatrix(predClassLogit, Lecture.Test$default)
+```
+
+What we find is that the SVM model does a better job of correctly identifying those who will default (correctly identifying 56 of 66 of them) but the overall predictive accuracy is worse (only 85% vs. 97%) because the SVM model asserts that many people (about 329) will default that do not do so. This occurs because this model hasn’t been tuned appropriately.
+
+```{r message = FALSE, warning=FALSE}
+# Balance data using weights from training dataset
+# wts <- 100/table(Lecture.Train$default)
+
+# Now we build a tuned SVM model using the tune function
+# Note this code is commented out due to long model fitting time
+# set.seed(123)
+# SVM.Tuned=tune(svm, default~., data=Lecture.Train, kernel="linear", probability = TRUE,
+#               class.weight=wts,  ranges=list(cost=c(0.1,1,10,100,1000),
+#               gamma=c(0.5,1,2,3,4)))
+
+# SVM.Tuned # prints report about SVM.Tuned
+# This code loads the model fit using the code above that is saved into your css_data file
+# Take note of this feature - we are loading a previously fit model stored as an .RData file
+load("SVM.RData")  # loads model data file saved by instructor
+# Now extract the best model
+SVM.Best<-SVM.Tuned$best.model
+```
+
+
+Now, evaluating our model performance using the confusion matrix (on the test dataset), we get a slight improvement in our overall accuracy on the test set (but we lose some specificity). What should be occurring to you about now is that, for comparing the performance of classification models, the confusion matrix might not be the best tool (much more to follow in future practical application exercises and lectures).
+```{r message = FALSE, warning=FALSE}
+# Calculate tuned model performance on the test dataset
+predClassSVMBest=predict(SVM.Best, Lecture.Test)
+
+# Report confusion matrix from on the test dataset
+confusionMatrix(predClassSVMBest, Lecture.Test$default)
+```
+
+#### Step 5: Model Performance Comparison
+
+#####  Model Performance Comparison Overview
+
+Here you’ll learn to use logistic regression and SVM models more advanced tools to conduct model performance comparison. Specifically, you will:
+
+- Develop a Receiver Operating Characteristic (ROC) curve for a given model.
+- Learn to calculate the Area Under the Curve (AUC), a summary statistic for ROC performance (although it is not as informative as a full ROC curve).
+- Learn to plot and compare multiple ROC curves simultaneously.
+
+
+##### Step 5.1: Set Up R Environment for Lecture Example Analysis
+Let’s begin by setting up our environment to continue with our lecture examples (hopefully you have been religiously saving your work). First, make sure you have all the needed packages loaded and let’s add a few more that will allow us to plot ROC curves:
+
+```{r message = FALSE, warning=FALSE}
+### Load previously needed libraries
+library(e1071)
+library(ISLR)
+library(ggplot2)
+library(gridExtra)
+library(class)
+library(rpart) 
+library(rpart.plot)
+library(caret)
+
+# New library for calculating ROC curves
+library(ROCR)
+```
+
+Now, perform the following tasks (you’ve done this a few times now):
+
+- Open the jupyter notebook file you saved under the file name “LectureExampleData2” by clicking the name in the home page so that you can continue building out the lecture examples
+- Load the lecture examples workspace you saved under the file name “LectureExampleData2.RData” (load() function)
+
+##### Step 5.2: Develop an ROC Curve and Calculate AUC for a Model
+
+We will use the plot(), performance() and prediction() commands from the ROCR package to generate ROC curves. While we will plot multiple ROC curves in the next step, let’s begin by plotting an ROC Curve for our logistic regression model. Then, we’ll add several more ROC curves to our graph in the next step.
+
+Before we get started, be sure to check out how the performance() and prediction() commands work by typing the following into the command line:
+
+ - ?prediction
+ - ?performance
+
+To build an ROC curve, we need to get a few statistics out of our prediction data. On the lecture data, we’ll be comparing performance on the Test dataset you named Lecture.Test. First, let’s get our predicted probabilities out of our model first (you already calculated them once, but we’ll do it again here).
+
+As a reminder of the data we are working with for the lecture examples, here is a quick summary and plot of the “Default” dataset containing all the data (this isn’t split into training and test datasets):
+
+```{R message = FALSE, warning=FALSE}
+# Get predicted probabilities from our best logit model
+predProbLogit <- predict(Logit.step, type = "response", newdata = Lecture.Test)
+```
+Now, we can calculate the needed True Positive Rate (TPR) and False Positive Rate (FPR) for the model using the performance() command, which requires the data to be formatted using the prediction() command. Note that we calculate the needed statistics using our predicted probabilities (getting these varies slightly for different models as you’ll see in the next section) and the observed response values. The code below places the outputs in the appropriate format:
+
+```{R message = FALSE, warning=FALSE}
+# Calculate ROC statistics for our best logit model
+Logit.ROC <- performance(prediction(predProbLogit, Lecture.Test$default), measure="tpr", x.measure="fpr")
+```
+
+Now, take a quick look at the values stored as attributes for the ROC statistics by calling Logit.ROC from the command prompt (literally type Logit.ROC into the command prompt). You will see that the True Positive Rate (TPR) has been stored in the y.values slot (called via the command Logit.ROC\@y.values) and the False Positive Rate (FPR) has been stored in the x.values slot (called the same way). We will use these attributes in just a minute to plot the difference in performance between several models at the same time. However, the ROCR package allows you to plot the ROC curve directly by calling the generic plot() command on the saved statistics as follows:
+
+```{R message = FALSE, warning=FALSE}
+plot(Logit.ROC, lwd = 2, main = "ROC Curve for Logistic Regression Model")
+```
+We can also use the performance() command to calculate the Area Under the (ROC) Curve (AUC) statistic. This statistic has a nice “real-world” definition in that it is the probability of that the model will rank a randomly chosen positive instance (i.e. default = “yes) higher than a randomly chosen negative one (default =”no“). The AUC is calculated in a similar manner to the ROC curve statistics above, and the resulting AUC statistic is stored in the y.value slot (see example below):
+
+```{R message = FALSE, warning=FALSE}
+# Calculate AUC - use @y.values to get AUC out
+Logit.AUC <- performance(prediction(predProbLogit, Lecture.Test$default), 
+                         measure="auc")@y.values
+Logit.AUC
+```
+
+The AUC value for our Logistic Regression (Step) model is 0.945, which is good model.
+
+##### Step 5.3: Plot/Compare Multiple ROC Curves Simultaneously (ROC Model Comparison)
+
+The commands below calculate the ROC and AUC statistics for the other model we fit via SVM. Note that because the outputs of the models vary slightly, the calls to the different models also are slightly different (take note of notation/code for the practical exercise that follows):
+
+
+```{R message = FALSE, warning=FALSE}
+# SVM - note that probability of "Yes" for default is in second column
+predProbSVM<-attributes(predict(SVM.Best, Lecture.Test, 
+                                probability = TRUE))$probabilities[,2]
+SVM.ROC <- performance(prediction(predProbSVM, Lecture.Test$default), 
+                       measure="tpr", x.measure="fpr")
+```
+
+Now, we can plot multiple ROC curves at the same time by leveraging the lines() command from basic R plotting. Note two important features below. First, note the calls to the x.values and y.values to get the needed TPR and FPR out of the ROC statistics. Also, note the use of the commands for the legend, which make it easier to differentiate between the different models.
+
+```{R message = FALSE, warning=FALSE}
+### Plot our ROC Performance with Logit as base
+plot(Logit.ROC, lwd=2, main = "ROC Comparison for Models on Lecture Test Dataset")
+
+# Add SVM
+lines(attributes(SVM.ROC)$x.values[[1]], attributes(SVM.ROC)$y.values[[1]], 
+      col="red", lwd=2)
+
+#Add Legend
+legend(x=.5, y=.6, c("Logistic (Step)", "SVM"), 
+       col=c("black", "red"), lwd=c(2,2))
+```
+
+We can also report each of the AUC values for comparison:
+```{R message = FALSE, warning=FALSE}
+SVM.AUC <- performance(prediction(predProbSVM, Lecture.Test$default), 
+                         measure="auc")@y.values
+
+Logit.AUC
+SVM.AUC
+```
+
+What we see is that for this particular problem, the Logistic Regression model seems to provide the best performance so far even though they are very close. 
+
+We will conduct performance evaluations with other methods very soon and then we decide which model works best for this Default dataset. 
+
+
+Before moving on, perform the following three actions to save your work and prepare for the practical application:
+
+
+  #. Save your workspace as “LectureExampleData2.RData” (By typing save.image(“LectureExampleData2.RData”) function)
+
+  #. Save your script file “LectureExampleData2" in the jupyter notebook (click on "Save and Checkpoint" next to "+" sign)
+  
+
+

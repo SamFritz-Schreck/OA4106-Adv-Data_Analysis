@@ -1,0 +1,188 @@
+---
+title: "Wk4_in_lab"
+author: "Sam Fritz-Schreck"
+date: "2023-07-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###  (Logistic Regression) Overview
+In this practical exercise, you’ll first run through a logistic regression exercise on a small, well-known dataset so that you can see how to use the code to develop a logistic regression model.  Let’s get started.
+
+#### Step 1: Set Up R Environment for Lecture Example Analysis
+
+Remember, if you can’t get the setwd (set working directory) function to work, try ?setwd to get some additional help.
+
+Since we’ll be conducting two different analyses for this practical exercise (including take home lab), you’ll need to create a new script file for the class examples. From this week we will work on classifications, let’s make a new jupyter notebook working space “LectureExampleData2” for In-Class lab and “LabExampleData2” for the Take-Home Lab.
+
+In this week we will use R packages "ggplot2", "gridExtra", and "caret".  You need to install them by using a function "install.packages()".
+
+To begin, we’ll need clear our current workspace (getting rid of any saved variables) and load a few packages that we’ll use for the example analysis. Cut and paste the following commands into your new script file and run them:
+
+```{R  message = FALSE, warning=FALSE}
+
+## Library for An Introduction to Statistical Learning with Applications in R
+library(ISLR)
+
+## Libraries for Plotting our Results
+library(ggplot2)
+library(gridExtra)
+
+## Library for confusion matrix
+library(caret)
+```
+Note if you look in the “Environment” window in your upper right hand column, all of the “objects” you created with your previous code have been erased from memory. You are restarting with a blank slate.
+
+###  Step 2: Load, Visualize, and Split (Training vs. Test) the Data
+
+Now, let’s bring in the dataset that we’ll be working with for the example. This is a simulated dataset titled “Default” containing information on ten-thousand credit customers provided in the text "An Introduction to Statistical Learning" (James et al, 2013). We will use this “Default” dataset to illustrate the concept of classification by fitting several different machine learning models to the data over the course of several practical application exercises. For these examples, we will develop models to “predict whether an individual will default on his or her credit card payment, on the basis of annual income and monthly credit card balance.” (James et al, 2013, pp. 128).
+
+"Default" dataset is in "ISLR" library.  So simply call "ISLR" library and call "Default".
+```{r message = FALSE, warning=FALSE}
+## Load Default (Credit Card Default Data)
+data(Default)
+
+# Display the first few rows of data
+head(Default)
+
+## Provide a summary of the data
+summary(Default)
+sum(is.na(Default))
+```
+
+Looking at the data, you’ll see that the response variable is stored in the column “default” which indicates whether or not a person defaulted on their payment. There is a categorical variable titled “student” indicating student status and two numeric variables, “balance” and “income”.
+
+Let’s plot the data based on the two numeric attributes to get a sense of what the data looks like using the ggplot package. Take careful note of how we use various aesthetics to change the formatting of the plot (color, shape, etc.):
+```{r message = FALSE, warning=FALSE}
+## Plot the actual data
+plotData <- ggplot(data = Default,
+       mapping = aes(x = balance, y = income, color = default, shape = student)) +
+    layer(geom = "point", stat = "identity", position = "identity") +
+    scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+    theme_bw() +
+    theme(legend.key = element_blank()) +
+    labs(title = "Original data")
+plotData
+```
+
+ggplot() function is very useful for plotting the data.  If you want to know more on the function type "?ggplot".
+
+We can see in the plot above that there is no “clean break” or simple rule that divides those that default from those that don’t. We will try several different modeling approaches to finding a best policy over the next few practical application exercises.
+
+Before we begin fitting models, we need to break the data into a training dataset (which we use to fit the model) and a test dataset (which we’ll use to evaluate model performance). We’ll split the Default dataset into a training dataset that includes 80% of the observations and a test dataset that includes 20% of our observations. We do this by generating a sample of index values and then pulling data out of the Default dataframe based on the sample: 
+```{r message = FALSE, warning=FALSE}
+# Partition of data set into 80% Train and 20% Test datasets
+set.seed(123)  # ensures we all get the sample sample of data for train/test
+
+sampler <- sample(nrow(Default),trunc(nrow(Default)*.80)) # samples index 
+
+Lecture.Train <- Default[sampler,]
+Lecture.Test <- Default[-sampler,]
+```
+#### Step 3: Fit a Logistic Regression Model
+
+The code blocks below fits two different logistic regression models. The first one uses R’s shorthand notation of a period for fitting a model using all features (response variable ~ .). The second model uses only the two numeric predictors, and uses the scale() command to center and scale the numeric data. The summary command provides a summary of the model fit (as discussed in the lecture).  
+```{r message = FALSE, warning=FALSE}
+Logit.1 <- glm(formula = default ~ .,
+               family  = binomial(link = "logit"),
+               data    = Lecture.Train)
+summary(Logit.1)
+
+## Fit logistic regression using only scaled numerical predictors
+Logit.2 <- glm(formula = default ~ scale(balance) + scale(income),
+               family  = binomial(link = "logit"),
+               data    = Lecture.Train)
+summary(Logit.2)
+```
+
+To use glm() function for logistic regression you have to set it as "family  = binomial(link = "logit")".
+
+We can see that the first model using all of the predictors provides a better fit (as we would expect). However, better fit on the training data often does not necessarily lead to a better model fit on out of sample test data (as discussed in the lectures). Selecting the subset of features that provides the best model is a large (unsolved) problem in data science, but there are some algorithmic procedures for doing so that provide some benefit. We’ll use one automated procedure called stepwise modeling below.
+
+#### Step 4: Stepwise Model Selection (Feature Subsetting)
+
+Please see the section starting at page 205 in An Introduction to Statistical Learning (James et al, 2013) for an in-depth discussion of model selection. For this practical exercise, we’ll apply the automated stepwise model selection approach to the model that has all of our predictors using the code below:
+
+
+```{r message = FALSE, warning=FALSE}
+# Conduct stepwise model selection
+Logit.step<-step(Logit.1, direction = "both")
+
+# Summarize the selected model
+summary(Logit.step)
+```
+
+Once the code runs, you can see that the model selected using the stepwise procedure uses only two of the predictor variables: student (a categorical Yes/No variable) and balance (a numeric variable). Now, let’s take a quick look at model performance.
+
+#### Step 5: Visualization and Performance of Model
+
+Now that we’ve picked a model, let’s add the predictions made to our dataset. We evaluate performance on the “held out” test dataset (i.e. data that wasn’t used to fit the model). The code block below creates a version of the Test dataset for plotting purposes and adds the resulting predictions to the dataframe. The column “predProbLogit” adds the probability calculated by the final logit model for each observation in the test dataset. The column “predClassLogit” adds the resulting prediction on the test dataset when the value 0.5 is used as the classification threshold. We again use the summary() command to get a quick look at the resulting data.
+
+```{r message = FALSE, warning=FALSE}
+# Put the predicted probability and class (at 0.5 threshold) at the end of the dataframe
+predProbLogit <- predict(Logit.step, type = "response", newdata = Lecture.Test)
+predClassLogit <- factor(predict(Logit.step, type = "response", newdata=Lecture.Test) > 0.5, levels = c(FALSE,TRUE), labels = c("No","Yes"))
+
+# Create a plotting version of the Default dataset where we will store model predictions
+Lecture.Test.Plotting <- Lecture.Test
+
+# Put the predicted probability and class (at 0.5 threshold) at the end of the plotting dataframe
+Lecture.Test.Plotting$predProbLogit <- predProbLogit
+Lecture.Test.Plotting$predClassLogit <- predClassLogit
+
+summary(Lecture.Test.Plotting)  # look at a summary of the updated data frame
+```
+
+Now, we can make a visualization to take a look at how the model fit the test data. The top row below shows the actual results in the test dataset. The second row shows the probabilistic prediction made by the model. The third row shows the classification made by the model on the test dataset when 0.5 is used as the classification threshold.
+
+```{r message = FALSE, warning=FALSE}
+# Plot the actual test data
+plotTest<-ggplot(data = Lecture.Test.Plotting,
+                 mapping = aes(x = balance, y = income, color = default, shape = student)) +
+  layer(geom = "point", stat = "identity", position = "identity") +
+  scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Test Data")
+
+plotLogit <- ggplot(data = Lecture.Test.Plotting,
+                    mapping = aes(x = balance, y = income, color = predProbLogit, shape = student)) +
+  layer(geom = "point",stat = "identity", position = "identity") +
+  scale_color_gradient(low = "blue", high = "red") +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Predicted probability of outcome (Logistic)")
+
+## Plot the class using threshold of 0.5
+plotLogitClass <- ggplot(data = Lecture.Test.Plotting,
+                         mapping = aes(x = balance, y = income, color = predClassLogit, shape = student)) +
+  layer(geom = "point", stat = "identity", position = "identity") +
+  scale_color_manual(values = c("No" = "blue", "Yes" = "red")) +
+  theme_bw() +
+  theme(legend.key = element_blank()) +
+  labs(title = "Predicted outcome (Logistic; p>0.5)")
+
+# Plot original data (top row) and predicted probability (bottom row)
+grid.arrange(plotTest, plotLogit, plotLogitClass, nrow = 3)
+```
+
+Finally, let’s calculate some performance statistics on the test data. We can get the full suite of performance statistics based on the confusion matrix using the confusionMatrix() command provided by the caret package:
+
+
+```{r message = FALSE, warning=FALSE}
+# Generate a confusion matrix and performance statistics on test dataset
+confusionMatrix(data=predClassLogit, reference=Lecture.Test$default) 
+```
+
+Evaluating the performance of the model on the training dataset above, we can see that the model does a pretty good job of predicting overall, but that it isn’t very good at identifying when someone is going to default at the classification threshold of 0.5. The model correctly predicts only 20 of the 66 of the of the people who will default at that threshold. As we will discuss further in the course, we may want to adjust our threshold depending on our problem, and we may want to try to find a better-performing model (more to follow). However, the exercise above provides a code example for fitting a logistic regression model that can be adapted for our practical application problem.
+
+Before moving on, perform the following three actions to save your work and prepare for the practical application:
+
+
+  #. Save your workspace as “LectureExampleData2.RData” (By typing save.image(“LectureExampleData2.RData”) function)
+
+  #. Save your script file “LectureExampleData2" in the jupyter notebook (click on "Save and Checkpoint" next to "+" sign)
+

@@ -1,5 +1,5 @@
 ---
-title: "Regression Lab 1"
+title: "Lab 1"
 author: "Sam Fritz-Schreck"
 date: "2023-07-05"
 output: html_document
@@ -846,7 +846,9 @@ Compare the short-term forecasting performance of at least three of the forecast
 Performance.Matrix
 ```
 
-As seen in the performance matrix above, the averaged ensemble model is the most accurate in both the 1 and 12 step cases, however development of a confidence interval is much more difficult for this model. For that reason, we will leverage the next highest performing model, ARIMA, for the forecast and accept slightly worse forecast performance for ease of confidence computation.
+As we are most concerned with short-term forecasting, we will focus on the 1 step model performance.
+
+As seen in the performance matrix above, the averaged ensemble model is the most accurate, however development of a confidence interval is much more difficult for this model. For that reason, we will leverage the next highest performing model, ARIMA, for the forecast and accept slightly worse forecast performance for ease of confidence computation. 
 
 Provide a graphic/visualization illustrating your forecast (and your uncertainty in the forecast) for the rest of the year.
 
